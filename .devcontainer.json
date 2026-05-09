@@ -1,0 +1,32 @@
+{
+  "name": "Raritan PDU Integration Dev",
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
+  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements_dev.txt && mkdir -p config && python -m homeassistant --config ./config --script ensure_config",
+  "forwardPorts": [8123],
+  "portsAttributes": {
+    "8123": {
+      "label": "Home Assistant",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      }
+    }
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder}/custom_components/raritan,target=${containerWorkspaceFolder}/config/custom_components/raritan,type=bind"
+  ]
+}
