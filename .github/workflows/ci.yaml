@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements_dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy custom_components/raritan
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements_dev.txt
+      - run: pytest --cov-fail-under=90
+      - name: Coverage gate per-module
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          gates = {
+              'custom_components/raritan/api.py': 95.0,
+              'custom_components/raritan/coordinator.py': 95.0,
+              'custom_components/raritan/config_flow.py': 95.0,
+          }
+          failed = []
+          for cls in root.iter('class'):
+              fname = cls.get('filename', '')
+              for path, target in gates.items():
+                  if fname.endswith(path.split('/')[-1]) and path in fname:
+                      pct = float(cls.get('line-rate', 0)) * 100
+                      if pct < target:
+                          failed.append(f'{fname}: {pct:.1f}% < {target}%')
+          if failed:
+              print('Per-module coverage failures:')
+              for f in failed:
+                  print(' -', f)
+              raise SystemExit(1)
+          print('Per-module coverage gates passed.')
+          "
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: htmlcov/
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
