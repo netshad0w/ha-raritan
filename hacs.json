@@ -1,0 +1,8 @@
+{
+  "name": "Raritan PDU",
+  "render_readme": true,
+  "homeassistant": "2026.3.2",
+  "country": ["FR", "US"],
+  "zip_release": true,
+  "filename": "raritan.zip"
+}
