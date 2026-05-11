@@ -1,0 +1,39 @@
+{
+  "entity": {
+    "button": {
+      "refresh_capabilities": {
+        "default": "mdi:refresh"
+      },
+      "cycle": {
+        "default": "mdi:restart"
+      }
+    },
+    "event": {
+      "alert": {
+        "default": "mdi:alert"
+      },
+      "state_change": {
+        "default": "mdi:swap-horizontal"
+      }
+    },
+    "binary_sensor": {
+      "psu_health": {
+        "default": "mdi:power-plug",
+        "state": {
+          "on": "mdi:power-plug-off"
+        }
+      },
+      "tripped": {
+        "default": "mdi:fuse",
+        "state": {
+          "on": "mdi:fuse-alert"
+        }
+      }
+    }
+  },
+  "services": {
+    "cycle_outlet": "mdi:restart",
+    "set_outlet_state": "mdi:power",
+    "reset_energy_counter": "mdi:counter"
+  }
+}

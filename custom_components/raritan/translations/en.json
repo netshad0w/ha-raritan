@@ -1,0 +1,155 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Raritan PDU",
+        "description": "Enter the address and credentials for the PDU. The integration uses HTTPS by default.",
+        "data": {
+          "host": "Host or IP",
+          "username": "Username",
+          "password": "Password",
+          "verify_tls": "Verify TLS certificate",
+          "ca_bundle": "Custom CA bundle path (optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Raritan PDU at {host}",
+        "description": "The PDU at {host} rejected your stored credentials. Enter the current username and password.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Raritan PDU at {host}",
+        "description": "Update the address, credentials, or TLS settings. The PDU serial must match the originally configured device.",
+        "data": {
+          "host": "Host or IP",
+          "username": "Username",
+          "password": "Password",
+          "verify_tls": "Verify TLS certificate",
+          "ca_bundle": "Custom CA bundle path (optional)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password",
+      "cannot_connect": "Cannot reach the PDU",
+      "tls_failed": "TLS certificate verification failed",
+      "ca_bundle_not_found": "The CA bundle path does not point to a readable file",
+      "unknown": "Unknown error"
+    },
+    "abort": {
+      "already_configured": "This PDU is already configured",
+      "reauth_serial_mismatch": "The PDU at this address has a different serial than the one originally configured. Aborted to prevent silent device swap.",
+      "reauth_successful": "Re-authentication successful.",
+      "reconfigure_serial_mismatch": "The PDU at this address has a different serial than the one originally configured. Aborted to prevent silent device swap.",
+      "reconfigure_successful": "Reconfiguration successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Raritan PDU options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "issues": {
+    "tls_verification_disabled": {
+      "title": "TLS verification disabled for {host}",
+      "description": "TLS certificate verification is disabled for the Raritan PDU at {host}. Anyone on the network path could intercept credentials. Re-enable verification or provide a CA bundle in the integration options."
+    },
+    "firmware_below_minimum": {
+      "title": "Raritan firmware {firmware} is below minimum {minimum}",
+      "description": "The PDU firmware {firmware} is older than the minimum supported version {minimum}. Update the PDU firmware via Xerus to use this integration."
+    },
+    "pdu_unreachable_extended": {
+      "title": "Raritan PDU unreachable for {minutes} minutes",
+      "description": "The PDU at {host} has been unreachable for {minutes} minutes. Check network, power, and credentials."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "inlet_voltage": {"name": "Inlet {idx} voltage"},
+      "inlet_current": {"name": "Inlet {idx} current"},
+      "inlet_active_power": {"name": "Inlet {idx} active power"},
+      "inlet_apparent_power": {"name": "Inlet {idx} apparent power"},
+      "inlet_power_factor": {"name": "Inlet {idx} power factor"},
+      "inlet_frequency": {"name": "Inlet {idx} frequency"},
+      "inlet_active_energy": {"name": "Inlet {idx} active energy"},
+      "voltage": {"name": "Voltage"},
+      "current": {"name": "Current"},
+      "active_power": {"name": "Active power"},
+      "apparent_power": {"name": "Apparent power"},
+      "active_energy": {"name": "Active energy"},
+      "peak_current": {"name": "Peak current"}
+    },
+    "binary_sensor": {
+      "tripped": {"name": "Tripped"},
+      "psu_health": {"name": "PSU {idx} health"}
+    },
+    "button": {
+      "refresh_capabilities": {"name": "Refresh capabilities"},
+      "cycle": {"name": "Cycle"}
+    },
+    "event": {
+      "alert": {"name": "Alert"},
+      "state_change": {"name": "State change"}
+    }
+  },
+  "exceptions": {
+    "cannot_resolve_outlet": {
+      "message": "Cannot resolve {entity_id} to a Raritan outlet."
+    },
+    "cannot_resolve_sensor": {
+      "message": "Cannot resolve {entity_id} to a Raritan sensor."
+    },
+    "not_energy_sensor": {
+      "message": "{entity_id} is not an active_energy sensor."
+    },
+    "no_config_entry": {
+      "message": "{entity_id} has no config entry."
+    },
+    "entry_not_loaded": {
+      "message": "The Raritan PDU for {entity_id} is not loaded; check the integration is set up and reachable."
+    },
+    "cycle_failed": {
+      "message": "Failed to cycle outlet {idx}: {error}"
+    },
+    "set_state_failed": {
+      "message": "Failed to set outlet {idx} state: {error}"
+    },
+    "switch_failed": {
+      "message": "Failed to switch outlet {idx}: {error}"
+    },
+    "reset_failed": {
+      "message": "Reset failed: {error}"
+    },
+    "refresh_failed": {
+      "message": "Refresh failed: {error}"
+    }
+  },
+  "services": {
+    "cycle_outlet": {
+      "name": "Cycle outlet",
+      "description": "Power-cycle a Raritan PDU outlet (off then on with the PDU's configured delay)."
+    },
+    "set_outlet_state": {
+      "name": "Set outlet state",
+      "description": "Explicitly set a Raritan PDU outlet to ON or OFF.",
+      "fields": {
+        "state": {
+          "name": "State",
+          "description": "Whether the outlet should be ON (true) or OFF (false)."
+        }
+      }
+    },
+    "reset_energy_counter": {
+      "name": "Reset energy counter",
+      "description": "Reset the cumulative energy counter on a Raritan inlet or outlet active_energy sensor."
+    }
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion au PDU Raritan",
+        "description": "Saisissez l'adresse et les identifiants du PDU. L'intégration utilise HTTPS par défaut.",
+        "data": {
+          "host": "Hôte ou IP",
+          "username": "Nom d'utilisateur",
+          "password": "Mot de passe",
+          "verify_tls": "Vérifier le certificat TLS",
+          "ca_bundle": "Chemin d'un CA bundle personnalisé (optionnel)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ré-authentification du PDU Raritan à {host}",
+        "description": "Le PDU à {host} a rejeté vos identifiants enregistrés. Saisissez le nom d'utilisateur et le mot de passe à jour.",
+        "data": {
+          "username": "Nom d'utilisateur",
+          "password": "Mot de passe"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfiguration du PDU Raritan à {host}",
+        "description": "Modifiez l'adresse, les identifiants ou les paramètres TLS. Le numéro de série du PDU doit correspondre à l'appareil initialement configuré.",
+        "data": {
+          "host": "Hôte ou IP",
+          "username": "Nom d'utilisateur",
+          "password": "Mot de passe",
+          "verify_tls": "Vérifier le certificat TLS",
+          "ca_bundle": "Chemin d'un CA bundle personnalisé (optionnel)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Identifiants invalides",
+      "cannot_connect": "Impossible de joindre le PDU",
+      "tls_failed": "Échec de la vérification du certificat TLS",
+      "ca_bundle_not_found": "Le chemin du CA bundle ne pointe pas vers un fichier lisible",
+      "unknown": "Erreur inconnue"
+    },
+    "abort": {
+      "already_configured": "Ce PDU est déjà configuré",
+      "reauth_serial_mismatch": "Le PDU à cette adresse a un numéro de série différent de celui initialement configuré. Abandon pour éviter une substitution silencieuse de matériel.",
+      "reauth_successful": "Ré-authentification réussie.",
+      "reconfigure_serial_mismatch": "Le PDU à cette adresse a un numéro de série différent de celui initialement configuré. Abandon pour éviter une substitution silencieuse de matériel.",
+      "reconfigure_successful": "Reconfiguration réussie."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options du PDU Raritan",
+        "data": {
+          "scan_interval": "Intervalle de polling (secondes)"
+        }
+      }
+    }
+  },
+  "issues": {
+    "tls_verification_disabled": {
+      "title": "Vérification TLS désactivée pour {host}",
+      "description": "La vérification du certificat TLS est désactivée pour le PDU Raritan à {host}. N'importe qui sur le chemin réseau pourrait intercepter les identifiants. Réactivez la vérification ou fournissez un CA bundle."
+    },
+    "firmware_below_minimum": {
+      "title": "Firmware Raritan {firmware} sous le minimum {minimum}",
+      "description": "Le firmware {firmware} du PDU est plus ancien que la version minimale supportée {minimum}. Mettez à jour via Xerus."
+    },
+    "pdu_unreachable_extended": {
+      "title": "PDU Raritan injoignable depuis {minutes} minutes",
+      "description": "Le PDU à {host} est injoignable depuis {minutes} minutes. Vérifiez le réseau, l'alimentation et les identifiants."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "inlet_voltage": {"name": "Inlet {idx} tension"},
+      "inlet_current": {"name": "Inlet {idx} courant"},
+      "inlet_active_power": {"name": "Inlet {idx} puissance active"},
+      "inlet_apparent_power": {"name": "Inlet {idx} puissance apparente"},
+      "inlet_power_factor": {"name": "Inlet {idx} facteur de puissance"},
+      "inlet_frequency": {"name": "Inlet {idx} fréquence"},
+      "inlet_active_energy": {"name": "Inlet {idx} énergie active"},
+      "voltage": {"name": "Tension"},
+      "current": {"name": "Courant"},
+      "active_power": {"name": "Puissance active"},
+      "apparent_power": {"name": "Puissance apparente"},
+      "active_energy": {"name": "Énergie active"},
+      "peak_current": {"name": "Courant de crête"}
+    },
+    "binary_sensor": {
+      "tripped": {"name": "Déclenché"},
+      "psu_health": {"name": "Santé PSU {idx}"}
+    },
+    "button": {
+      "refresh_capabilities": {"name": "Rafraîchir les capacités"},
+      "cycle": {"name": "Cycler"}
+    },
+    "event": {
+      "alert": {"name": "Alerte"},
+      "state_change": {"name": "Changement d'état"}
+    }
+  },
+  "exceptions": {
+    "cannot_resolve_outlet": {
+      "message": "Impossible de résoudre {entity_id} en une prise Raritan."
+    },
+    "cannot_resolve_sensor": {
+      "message": "Impossible de résoudre {entity_id} en un capteur Raritan."
+    },
+    "not_energy_sensor": {
+      "message": "{entity_id} n'est pas un capteur active_energy."
+    },
+    "no_config_entry": {
+      "message": "{entity_id} n'a pas d'entrée de configuration."
+    },
+    "entry_not_loaded": {
+      "message": "Le PDU Raritan pour {entity_id} n'est pas chargé ; vérifiez que l'intégration est configurée et joignable."
+    },
+    "cycle_failed": {
+      "message": "Échec du cycle de la prise {idx} : {error}"
+    },
+    "set_state_failed": {
+      "message": "Échec du réglage de l'état de la prise {idx} : {error}"
+    },
+    "switch_failed": {
+      "message": "Échec de la commande de la prise {idx} : {error}"
+    },
+    "reset_failed": {
+      "message": "Échec de la réinitialisation : {error}"
+    },
+    "refresh_failed": {
+      "message": "Échec du rafraîchissement : {error}"
+    }
+  },
+  "services": {
+    "cycle_outlet": {
+      "name": "Cycler la prise",
+      "description": "Cycle l'alimentation d'une prise du PDU Raritan (off puis on avec le délai configuré du PDU)."
+    },
+    "set_outlet_state": {
+      "name": "Définir l'état de la prise",
+      "description": "Définit explicitement une prise du PDU Raritan sur ON ou OFF.",
+      "fields": {
+        "state": {
+          "name": "État",
+          "description": "Si la prise doit être allumée (true) ou éteinte (false)."
+        }
+      }
+    },
+    "reset_energy_counter": {
+      "name": "Réinitialiser le compteur d'énergie",
+      "description": "Réinitialise le compteur d'énergie cumulée d'un inlet ou outlet Raritan active_energy."
+    }
+  }
+}
