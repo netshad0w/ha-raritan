@@ -1,0 +1,31 @@
+cycle_outlet:
+  name: Cycle outlet
+  description: Power-cycle a Raritan PDU outlet (off then on with the PDU's configured delay).
+  target:
+    entity:
+      domain: switch
+      integration: raritan
+
+set_outlet_state:
+  name: Set outlet state
+  description: Explicitly set a Raritan PDU outlet to ON or OFF.
+  target:
+    entity:
+      domain: switch
+      integration: raritan
+  fields:
+    state:
+      name: State
+      description: Whether the outlet should be ON (true) or OFF (false).
+      required: true
+      selector:
+        boolean:
+
+reset_energy_counter:
+  name: Reset energy counter
+  description: Reset the cumulative energy counter on a Raritan inlet or outlet active_energy sensor.
+  target:
+    entity:
+      domain: sensor
+      integration: raritan
+      device_class: energy
