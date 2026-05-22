@@ -30,7 +30,6 @@ def _caps(*, nb_psu: int = 1, env_ids: tuple[str, ...] = ()) -> CapabilityMatrix
         env_sensor_ids=env_ids,
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
         nb_psu=nb_psu,
     )
 

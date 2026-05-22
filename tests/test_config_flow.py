@@ -326,7 +326,6 @@ async def test_reauth_serial_mismatch_aborts(hass: HomeAssistant, mock_raritan: 
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     with patch("custom_components.raritan.config_flow.RaritanAPI") as api_cls:
         api_cls.return_value.probe.return_value = different_cap
