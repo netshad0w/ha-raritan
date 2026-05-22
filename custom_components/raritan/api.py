@@ -160,10 +160,15 @@ class RaritanAPI:
         # the TTL eviction in `_refresh_proxies` (see _OUTLET_SENSORS_TTL).
         self._outlet_sensors_structs_ts: float | None = None
         self._ocp_sensors_structs: list[Any] | None = None
+        # Outlet / OCP labels are nameplate metadata that don't change at
+        # runtime, so we fetch getMetaData() once at proxy-load time and cache
+        # the label strings. Per-tick we only read getState()/getReading().
+        self._outlet_labels: list[str] | None = None
+        self._ocp_labels: list[str] | None = None
         self._alerted_sensor_manager: Any | None = None
-        # Env (peripheral) sensors discovered at probe time.
-        # Each entry: (sensor_id, sensor_proxy, sensor_type_short, unit_str|None,
-        # is_state_sensor, label).
+        # Env (peripheral) sensors. Discovered lazily on the first telemetry
+        # tick (NOT at probe time) so async_setup_entry doesn't block on the
+        # ~32-slot peripheral walk. ``None`` means "not yet discovered".
         self._env_sensors: list[_EnvSensor] | None = None
         # Per-PSU state sensors from Pdu.Sensors.powerSupplyStatus, cached at
         # probe time so each tick only batches getState() reads.
@@ -225,6 +230,8 @@ class RaritanAPI:
         self._outlet_sensors_structs = None
         self._outlet_sensors_structs_ts = None
         self._ocp_sensors_structs = None
+        self._outlet_labels = None
+        self._ocp_labels = None
         self._alerted_sensor_manager = None
         self._env_sensors = None
         self._psu_state_sensors = None
@@ -261,6 +268,12 @@ class RaritanAPI:
         `getOutlets`, `getOverCurrentProtectors`) into a single HTTP roundtrip.
         This was four sequential round-trips before, which dominated the
         reauth/setup latency on slow PDUs.
+
+        Env (peripheral) discovery is intentionally deferred: the ~32-slot
+        peripheral walk is slow (~17 s on a fully populated PX3) and would
+        block ``async_setup_entry``. The first coordinator tick (or the
+        periodic ``refresh_env_sensors`` rescan) populates env sensors instead,
+        so ``env_sensor_ids`` is empty here.
         """
         try:
             pdu = self._ensure_connected()
@@ -289,8 +302,6 @@ class RaritanAPI:
         else:
             self._psu_state_sensors = list(getattr(pdu_sensors, "powerSupplyStatus", []) or [])
 
-        env_sensor_ids = self._discover_env_sensors(pdu)
-
         nameplate = metadata.nameplate
         mac = getattr(metadata, "macAddress", None) or getattr(nameplate, "macAddress", None)
         return CapabilityMatrix(
@@ -302,7 +313,7 @@ class RaritanAPI:
             nb_inlets=len(inlets),
             outlet_ids=tuple(range(1, len(outlets) + 1)),
             ocp_ids=tuple(range(1, len(ocps) + 1)),
-            env_sensor_ids=env_sensor_ids,
+            env_sensor_ids=(),
             outlet_switching=bool(getattr(metadata, "hasSwitchableOutlets", False)),
             outlet_metering=bool(getattr(metadata, "hasMeteredOutlets", False)),
             nb_psu=len(self._psu_state_sensors),
@@ -324,13 +335,13 @@ class RaritanAPI:
         return (nameplate.serialNumber, nameplate.model)
 
     def _discover_env_sensors(self, pdu: Any) -> tuple[str, ...]:
-        """Best-effort peripheral discovery used at probe time.
+        """Best-effort peripheral discovery.
 
-        Populates ``self._env_sensors`` (list of (sensor_id, proxy, type, unit,
-        is_state, label)) and returns the tuple of stable sensor IDs for the
-        CapabilityMatrix. Swallows any error: this surface is optional and
-        often blocked by role permissions, so a failure degrades to "no env
-        sensors" rather than aborting setup.
+        Populates ``self._env_sensors`` and returns the tuple of stable sensor
+        IDs. Swallows any error: this surface is optional and often blocked by
+        role permissions, so a failure degrades to "no env sensors" rather than
+        aborting. Invoked lazily on the first telemetry tick (not at probe
+        time) so setup never blocks on the peripheral walk.
         """
         walked = self._walk_env_sensors(pdu)
         self._env_sensors = walked if walked is not None else []
@@ -360,35 +371,44 @@ class RaritanAPI:
         reached, letting callers tell "no peripherals" apart from "couldn't
         ask".
         """
-        env_sensors: list[_EnvSensor] = []
         try:
             mgr = pdu.getPeripheralDeviceManager()
             slots = list(mgr.getDeviceSlots())
         except (HttpException, AttributeError):
             return None
         except Exception as exc:
-            _LOGGER.debug("Peripheral discovery unavailable on %s: %s", self._host, exc)
+            _LOGGER.debug("Peripheral discovery unavailable on %s: %s", self._host, str(exc)[:200])
             return None
 
-        for slot_idx, slot in enumerate(slots):
-            try:
-                device = slot.getDevice()
-            except Exception as exc:
-                _LOGGER.debug("Skipping slot %d (getDevice failed): %s", slot_idx, exc)
+        if not slots:
+            return []
+
+        # One bulk roundtrip for every slot's device handle instead of one RPC
+        # per slot: the PDU closes keep-alive between requests, so each RPC pays
+        # a fresh ~0.6s TLS handshake. A PX exposes a fixed slot count (~32)
+        # regardless of occupancy, so a per-slot walk dominated discovery time.
+        device_helper = BulkRequestHelper(self._agent)
+        for slot in slots:
+            device_helper.add_request(slot.getDevice)
+        devices = device_helper.perform_bulk()
+
+        # peripheral.Device is a ValueObject ['deviceID', 'position',
+        # 'packageClass', 'device'] where `device` is a single Sensor proxy
+        # (never a list). Classify numeric vs state by which read method it
+        # exposes (NumericSensor.getReading vs StateSensor.getState).
+        pending: list[tuple[str, str, Any, bool]] = []  # (base_id, label, proxy, is_state)
+        for slot_idx, device in enumerate(devices):
+            if isinstance(device, Exception) or device is None:
                 continue
-            if device is None:
-                continue
-            # peripheral.Device is a ValueObject with shape
-            # ['deviceID', 'position', 'packageClass', 'device'] where `device`
-            # is typecheck.is_interface(..., raritan.rpc.sensors.Sensor): a
-            # single Sensor proxy, never a list. So we always have at most one
-            # sensor per slot; classify it as numeric or state by which read
-            # method it exposes (NumericSensor.getReading vs StateSensor.getState).
             sensor_proxy = getattr(device, "device", None)
             if sensor_proxy is None:
                 continue
-
-            # Build a stable id and label from the device struct.
+            if hasattr(sensor_proxy, "getReading"):
+                is_state = False
+            elif hasattr(sensor_proxy, "getState"):
+                is_state = True
+            else:
+                continue
             try:
                 serial = (
                     str(getattr(device.deviceID, "serial", ""))
@@ -399,36 +419,41 @@ class RaritanAPI:
                 serial = ""
             base_id = serial or f"slot_{slot_idx}"
             label = serial or f"Peripheral {slot_idx}"
+            pending.append((base_id, label, sensor_proxy, is_state))
 
-            if hasattr(sensor_proxy, "getReading"):
-                stype, unit = self._classify_sensor(sensor_proxy)
-                env_sensors.append(
-                    _EnvSensor(f"{base_id}:n0", sensor_proxy, stype, unit, False, label)
-                )
-            elif hasattr(sensor_proxy, "getState"):
-                stype, _unit = self._classify_sensor(sensor_proxy)
+        # Second bulk roundtrip: classify every sensor's TypeSpec at once.
+        specs: list[Any] = []
+        if pending:
+            spec_helper = BulkRequestHelper(self._agent)
+            for _base_id, _label, sensor_proxy, _is_state in pending:
+                spec_helper.add_request(sensor_proxy.getTypeSpec)
+            specs = spec_helper.perform_bulk()
+
+        env_sensors: list[_EnvSensor] = []
+        for (base_id, label, sensor_proxy, is_state), spec in zip(pending, specs, strict=True):
+            stype, unit = self._classify_spec(spec)
+            if is_state:
                 env_sensors.append(
                     _EnvSensor(f"{base_id}:s0", sensor_proxy, stype, None, True, label)
+                )
+            else:
+                env_sensors.append(
+                    _EnvSensor(f"{base_id}:n0", sensor_proxy, stype, unit, False, label)
                 )
 
         return env_sensors
 
     @staticmethod
-    def _classify_sensor(sensor: Any) -> tuple[str, str | None]:
-        """Best-effort: read the sensor's TypeSpec and map readingtype/unit.
+    def _classify_spec(spec: Any) -> tuple[str, str | None]:
+        """Map a sensor's pre-fetched TypeSpec to (sensor_type_short, unit).
 
-        Uses getTypeSpec() which exists on both NumericSensor and StateSensor
-        (NumericSensor.getMetaData() also wraps a TypeSpec but doesn't exist
-        on StateSensor, which would silently classify all state peripherals
-        as UNKNOWN).
-
-        Returns (sensor_type_short, unit_str_or_none). Never raises; falls
-        back to ("UNKNOWN", None).
+        ``spec`` is the result of a bulked ``getTypeSpec`` call, so it may be a
+        TypeSpec, ``None``, or an Exception (bulk per-request failure). Never
+        raises; falls back to ("UNKNOWN", None).
         """
+        if spec is None or isinstance(spec, Exception):
+            return ("UNKNOWN", None)
         try:
-            spec = sensor.getTypeSpec()
-            if spec is None:
-                return ("UNKNOWN", None)
             rt_raw = getattr(spec, "readingtype", None)
             rt = int(rt_raw) if rt_raw is not None else None
             unit_raw = getattr(spec, "unit", None)
@@ -443,12 +468,14 @@ class RaritanAPI:
         """Populate the cached inlet/outlet proxy lists if not yet loaded.
 
         Two bulk roundtrips on the first call (one for the lists, one for the
-        Sensors structs). Subsequent ticks reuse the cached proxies; the only
-        thing that changes per tick is the readings.
+        Sensors structs + the one-shot outlet/OCP labels). Subsequent ticks
+        reuse the cached proxies and labels; the only thing that changes per
+        tick is the readings.
         """
         # Outlet sensor structs go stale on PX3 firmware 4.3.x after roughly
         # a minute (see _OUTLET_SENSORS_TTL). Evict the cached structs so the
-        # block below re-fetches them from the live PDU.
+        # block below re-fetches them from the live PDU. Labels are NOT evicted:
+        # they're nameplate metadata and don't go stale.
         if (
             self._outlet_sensors_structs is not None
             and self._outlet_sensors_structs_ts is not None
@@ -457,6 +484,13 @@ class RaritanAPI:
             self._outlet_sensors_structs = None
 
         pdu = self._ensure_connected()
+
+        # Env (peripheral) sensors are discovered lazily here on the first tick
+        # (probe() no longer walks them, to keep setup fast). Best-effort: a
+        # failed walk leaves the set empty without breaking the tick.
+        if self._env_sensors is None:
+            self._discover_env_sensors(pdu)
+
         if self._inlets is None:
             self._inlets = list(pdu.getInlets())
         need_outlets = cap.outlet_metering or cap.outlet_switching
@@ -465,6 +499,7 @@ class RaritanAPI:
         if not need_outlets:
             self._outlets = []
             self._outlet_sensors_structs = []
+            self._outlet_labels = []
 
         # Inlet sensor structs (one Inlet.Sensors per inlet)
         if self._inlet_sensors_structs is None and self._inlets is not None:
@@ -472,6 +507,18 @@ class RaritanAPI:
             for inlet in self._inlets:
                 helper.add_request(inlet.getSensors)
             self._inlet_sensors_structs = list(helper.perform_bulk())
+
+        # Outlet labels: fetched once via getMetaData and cached. Labels are
+        # nameplate metadata, so we read them only when the cache is empty (not
+        # every tick, and not on TTL struct eviction).
+        if need_outlets and self._outlet_labels is None and self._outlets is not None:
+            helper = BulkRequestHelper(self._agent)
+            for outlet in self._outlets:
+                helper.add_request(outlet.getMetaData)
+            md_results = list(helper.perform_bulk())
+            self._outlet_labels = [
+                _label_or_default(md, idx) for idx, md in enumerate(md_results, start=1)
+            ]
 
         # Outlet sensor structs (only if metered)
         if (
@@ -495,11 +542,22 @@ class RaritanAPI:
         if not need_ocp:
             self._ocps = []
             self._ocp_sensors_structs = []
+            self._ocp_labels = []
         if need_ocp and self._ocp_sensors_structs is None and self._ocps is not None:
             helper = BulkRequestHelper(self._agent)
             for ocp in self._ocps:
                 helper.add_request(ocp.getSensors)
             self._ocp_sensors_structs = list(helper.perform_bulk())
+
+        # OCP labels: one-shot getMetaData, cached like outlet labels.
+        if need_ocp and self._ocp_labels is None and self._ocps is not None:
+            helper = BulkRequestHelper(self._agent)
+            for ocp in self._ocps:
+                helper.add_request(ocp.getMetaData)
+            md_results = list(helper.perform_bulk())
+            self._ocp_labels = [
+                _label_or_default(md, idx) for idx, md in enumerate(md_results, start=1)
+            ]
 
         # PSU state sensors come from Pdu.Sensors. Best-effort: ignore them if
         # the SKU/firmware doesn't expose them. probe() pre-populates this so
@@ -515,11 +573,13 @@ class RaritanAPI:
     def fetch_telemetry(self, cap: CapabilityMatrix) -> CoordinatorPayload:
         """Fetch a single telemetry tick using one or two bulk RPCs.
 
-        The very first call after connect or close() does up to 4 bulk
-        roundtrips: list inlets, list outlets, get inlet sensor structs,
-        get outlet sensor structs. After that, every tick is a single bulk
-        roundtrip that batches every sensor reading + outlet getState +
-        outlet getMetaData (label) into one HTTP request.
+        The first call after connect or close() does the heavy proxy-loading
+        bulks (list inlets/outlets/OCPs, fetch sensor structs, cache outlet/OCP
+        labels via one-shot getMetaData). After that, every tick is a single
+        bulk roundtrip that batches every sensor reading + outlet getState +
+        OCP trip getState + the alerted-sensor poll into one HTTP request.
+        Outlet/OCP labels are read from the per-load cache, NOT re-fetched each
+        tick.
         """
         start = time.monotonic_ns()
         try:
@@ -528,8 +588,10 @@ class RaritanAPI:
             inlet_sensors_structs = self._inlet_sensors_structs or []
             outlet_sensors_structs = self._outlet_sensors_structs or []
             outlets_proxies = self._outlets or []
+            outlet_labels = self._outlet_labels or []
             ocp_sensors_structs = self._ocp_sensors_structs or []
             ocps_proxies = self._ocps or []
+            ocp_labels = self._ocp_labels or []
             env_sensors_list = self._env_sensors or []
             psu_sensors = self._psu_state_sensors or []
 
@@ -550,12 +612,12 @@ class RaritanAPI:
                         row.append(False)
                 inlet_request_layout.append(row)
 
-            # Outlet getMetaData + getState (always when outlets present)
-            outlet_meta_state_count = 0
+            # Outlet getState (always when outlets present). Labels come from
+            # the per-load cache, not re-fetched each tick.
+            outlet_state_count = 0
             for outlet in outlets_proxies:
-                helper.add_request(outlet.getMetaData)
                 helper.add_request(outlet.getState)
-                outlet_meta_state_count += 2
+                outlet_state_count += 1
 
             # Outlet readings (only if metered)
             outlet_request_layout: list[list[bool]] = []
@@ -574,10 +636,10 @@ class RaritanAPI:
                             row.append(False)
                     outlet_request_layout.append(row)
 
-            # OCP getMetaData + trip getState + numeric sensor reads
+            # OCP trip getState + numeric sensor reads. Labels come from the
+            # per-load cache, not re-fetched each tick.
             ocp_request_layout: list[list[bool]] = []
-            for ocp_idx, ocp in enumerate(ocps_proxies):
-                helper.add_request(ocp.getMetaData)
+            for ocp_idx, _ocp in enumerate(ocps_proxies):
                 sensors_struct = (
                     ocp_sensors_structs[ocp_idx] if ocp_idx < len(ocp_sensors_structs) else None
                 )
@@ -623,6 +685,19 @@ class RaritanAPI:
                 else:
                     psu_request_layout.append(False)
 
+            # Alert poll folded into the SAME bulk: getAlertedSensors() is one
+            # request, so the whole tick costs ONE roundtrip instead of a
+            # second poll via fetch_alerts. Best-effort: a failure (e.g. role
+            # lacks permission) decodes to no alerts without breaking the tick.
+            alerts_queued = False
+            try:
+                mgr = self._ensure_alerted_sensor_manager()
+                helper.add_request(mgr.getAlertedSensors)
+                alerts_queued = True
+            except (HttpException, JsonRpcErrorException) as exc:
+                _LOGGER.debug("Alert poll skipped (manager unavailable): %s", exc)
+                self._alerted_sensor_manager = None
+
             results = list(helper.perform_bulk())
 
             # Decode in the order we queued.
@@ -651,14 +726,13 @@ class RaritanAPI:
                 )
 
             outlets: list[OutletReading] = []
-            outlet_md_state = results[cursor : cursor + outlet_meta_state_count]
-            cursor += outlet_meta_state_count
+            outlet_states = results[cursor : cursor + outlet_state_count]
+            cursor += outlet_state_count
             for outlet_idx, _outlet in enumerate(outlets_proxies, start=1):
-                md = outlet_md_state[(outlet_idx - 1) * 2]
-                state = outlet_md_state[(outlet_idx - 1) * 2 + 1]
+                state = outlet_states[outlet_idx - 1]
                 label = (
-                    str(getattr(md, "label", None) or outlet_idx)
-                    if not isinstance(md, Exception)
+                    outlet_labels[outlet_idx - 1]
+                    if outlet_idx - 1 < len(outlet_labels)
                     else str(outlet_idx)
                 )
                 # Outlet.getState() returns Outlet.State STRUCT (not the enum).
@@ -708,12 +782,7 @@ class RaritanAPI:
             # OCP decode
             ocps: list[OcpReading] = []
             for ocp_idx, row in enumerate(ocp_request_layout, start=1):
-                md_result = results[cursor]
-                cursor += 1
-                if isinstance(md_result, Exception):
-                    label = str(ocp_idx)
-                else:
-                    label = str(getattr(md_result, "label", "") or ocp_idx)
+                label = ocp_labels[ocp_idx - 1] if ocp_idx - 1 < len(ocp_labels) else str(ocp_idx)
                 trip_present = row[0]
                 if trip_present:
                     state_result = results[cursor]
@@ -779,6 +848,19 @@ class RaritanAPI:
                     psus.append(PsuReading(idx=psu_idx, ok=None))
                     continue
                 psus.append(PsuReading(idx=psu_idx, ok=int(getattr(raw, "value", 0)) == 0))
+
+            # Alert decode: the folded getAlertedSensors() result is the final
+            # queued entry. Best-effort: a per-request failure (Exception in the
+            # results list) decodes to no alerts and drops the cached manager so
+            # the next tick rebuilds it.
+            current_alerts: list[AlertSnapshot] = []
+            if alerts_queued:
+                alert_result = results[cursor]
+                cursor += 1
+                if isinstance(alert_result, Exception):
+                    self._alerted_sensor_manager = None
+                else:
+                    current_alerts = self._build_alert_snapshots(alert_result)
         except (HttpException, JsonRpcErrorException) as exc:
             # Drop cached proxies; the next tick will re-fetch them after
             # whatever transient transport issue caused this.
@@ -788,9 +870,12 @@ class RaritanAPI:
             self._inlet_sensors_structs = None
             self._outlet_sensors_structs = None
             self._outlet_sensors_structs_ts = None
+            self._outlet_labels = None
             self._ocp_sensors_structs = None
+            self._ocp_labels = None
             self._env_sensors = None
             self._psu_state_sensors = None
+            self._alerted_sensor_manager = None
             raise self._remap(exc) from exc
 
         elapsed_ms = (time.monotonic_ns() - start) // 1_000_000
@@ -800,7 +885,7 @@ class RaritanAPI:
             ocps=ocps,
             env=env,
             psus=psus,
-            current_alerts=[],
+            current_alerts=current_alerts,
             last_tick_duration_ms=int(elapsed_ms),
             consecutive_skips=0,
         )
@@ -841,10 +926,14 @@ class RaritanAPI:
         return self._alerted_sensor_manager
 
     def fetch_alerts(self, _cap: CapabilityMatrix) -> list[AlertSnapshot]:
-        """Return the current alerted sensor snapshots.
+        """Return the current alerted sensor snapshots in a standalone roundtrip.
+
+        Telemetry ticks fold the alert poll into ``fetch_telemetry``'s bulk, so
+        this method is no longer on the per-tick hot path. It remains available
+        for callers (e.g. diagnostics) that want an explicit alert poll.
 
         Best-effort: returns `[]` on auth/unsupported errors so a missing role
-        permission can't break the whole telemetry tick.
+        permission can't break the caller.
         """
         try:
             mgr = self._ensure_alerted_sensor_manager()
@@ -857,19 +946,59 @@ class RaritanAPI:
             # Drop the cached manager so the next call retries.
             self._alerted_sensor_manager = None
             raise mapped from exc
+        return self._build_alert_snapshots(sensor_data_list)
+
+    @staticmethod
+    def _decode_alert_label(md: Any) -> str:
+        """Decode a getMetaData() result to a sensor label, never raising.
+
+        ``md`` is the bulked ``getMetaData`` result, so it may be metadata,
+        ``None``, or an Exception (per-request bulk failure) -> falls back to
+        "?" so a single failed sub-request keeps its fallback label rather than
+        breaking the whole tick.
+        """
+        if md is None or isinstance(md, Exception):
+            return "?"
+        # Try a name attr first, then fall back to type/typeSpec representations.
+        return str(getattr(md, "name", None) or getattr(md, "type", "?"))
+
+    def _build_alert_snapshots(self, sensor_data_list: Any) -> list[AlertSnapshot]:
+        """Decode an AlertedSensorManager.getAlertedSensors() result into snapshots.
+
+        All per-sensor ``getMetaData`` lookups are batched into a single
+        ``BulkRequestHelper`` roundtrip rather than issued sequentially. Bulk
+        embeds per-request failures as Exception values in the result list, so a
+        single sensor whose metadata can't be fetched degrades to its fallback
+        label without breaking the others.
+        """
+        rows = list(sensor_data_list)
+        # First pass: collect the per-row pieces and queue a getMetaData per
+        # sensor that exposes one.
+        helper = BulkRequestHelper(self._agent)
+        md_index: list[int | None] = []  # row -> index into bulk results, or None
+        for sd in rows:
+            sensor = getattr(sd, "sensor", None)
+            getter = getattr(sensor, "getMetaData", None) if sensor is not None else None
+            if getter is not None:
+                helper.add_request(getter)
+                md_index.append(len(md_index))
+            else:
+                md_index.append(None)
+        try:
+            md_results = helper.perform_bulk() if any(i is not None for i in md_index) else []
+        except (HttpException, JsonRpcErrorException):
+            # A whole-bulk transport failure must not break the tick: every
+            # alert keeps its fallback label.
+            md_results = []
 
         snapshots: list[AlertSnapshot] = []
-        for sd in sensor_data_list:
+        for sd, idx in zip(rows, md_index, strict=True):
             alert_state = getattr(getattr(sd, "alertState", None), "name", "UNAVAILABLE")
             sensor = getattr(sd, "sensor", None)
             parent = getattr(sd, "parent", None)
-            sensor_label = "?"
-            try:
-                md = sensor.getMetaData() if sensor is not None else None
-                if md is not None:
-                    # Try a name attr first, then fall back to type/typeSpec representations.
-                    sensor_label = str(getattr(md, "name", None) or getattr(md, "type", "?"))
-            except Exception:  # best-effort label, never break tick
+            if idx is not None and idx < len(md_results):
+                sensor_label = self._decode_alert_label(md_results[idx])
+            else:
                 sensor_label = "?"
             # Use the public `target` attr set by raritan.rpc.Interface.__init__
             # (the RID string). The leading-underscore `_target` form is not part
@@ -918,6 +1047,17 @@ class RaritanAPI:
         """Reset the cumulative energy counter on outlet `idx` (1-based)."""
         self._ensure_outlets_proxy()
         self._reset_energy(proxy_list=self._outlets or [], proxy_name="Outlet", idx=idx)
+
+
+def _label_or_default(md: Any, idx: int) -> str:
+    """Decode a getMetaData() result to its label, falling back to str(idx).
+
+    Used to cache outlet/OCP labels once at proxy-load time. Tolerates an
+    Exception value (per-request bulk failure) or a missing/empty label.
+    """
+    if isinstance(md, Exception):
+        return str(idx)
+    return str(getattr(md, "label", None) or idx)
 
 
 def _value_or_none(reading: Any) -> float | None:

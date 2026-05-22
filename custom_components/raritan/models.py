@@ -119,10 +119,10 @@ class PsuReading:
 class CoordinatorPayload:
     """The data structure produced by every coordinator tick.
 
-    Two-phase fill: ``fetch_telemetry`` (executor job) builds the payload with
-    ``current_alerts=[]``; the coordinator then runs ``fetch_alerts`` in a
-    separate executor job and assigns ``current_alerts`` after construction.
-    Every other field is immutable once ``__post_init__`` has run.
+    ``fetch_telemetry`` (one executor job, one bulk roundtrip) builds the whole
+    payload, including ``current_alerts`` from the alert poll folded into the
+    same bulk. The coordinator reads the alerts straight off the payload, so a
+    tick costs a single roundtrip.
     """
 
     inlets: list[InletReading]

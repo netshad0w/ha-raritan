@@ -55,6 +55,17 @@ def auto_enable_custom_integrations(enable_custom_integrations: Any) -> None:
 
 
 @pytest.fixture
+def fake_bulk() -> MagicMock:
+    """A fresh fake ``BulkRequestHelper`` class for patching the SDK helper.
+
+    Tests patch ``custom_components.raritan.api.BulkRequestHelper`` with this so
+    queued bulk requests dispatch to the mocked SDK methods. Each test gets its
+    own instance so queued state never leaks between tests.
+    """
+    return make_fake_bulk_helper_class()
+
+
+@pytest.fixture
 def snapshot_4_3_11() -> dict[str, Any]:
     """Anonymized PX3-5487V-N2 snapshot on firmware 4.3.11."""
     with (FIXTURES_DIR / "4.3.11" / "snapshot.json").open(encoding="utf-8") as f:

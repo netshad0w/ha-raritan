@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -85,7 +86,7 @@ def test_probe_constructs_agent_with_verify_tls_false(
         assert kwargs.get("disable_certificate_verification") is True
 
 
-def test_probe_constructs_agent_with_ca_bundle() -> None:
+def test_probe_constructs_agent_with_ca_bundle(fake_bulk: MagicMock) -> None:
     """When verify_tls=True and a ca_bundle path is given, the Agent is
     constructed with disable_certificate_verification=False and the SDK
     pipeline runs without exception. The custom CA injection itself is
@@ -127,7 +128,7 @@ def test_probe_constructs_agent_with_ca_bundle() -> None:
     with (
         patch("custom_components.raritan.api.Agent") as agent_cls,
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         patch.object(_ssl, "create_default_context", return_value=MagicMock()),
     ):
         api.probe()
@@ -190,7 +191,7 @@ def test_fetch_telemetry_invalid_reading_yields_none(
     assert payload.inlets[0].voltage is None
 
 
-def test_probe_raises_auth_error_on_403() -> None:
+def test_probe_raises_auth_error_on_403(fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException  # type: ignore[import-not-found]
 
     from custom_components.raritan.api import RaritanAuthError
@@ -207,13 +208,13 @@ def test_probe_raises_auth_error_on_403() -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanAuthError),
     ):
         api.probe()
 
 
-def test_probe_raises_connection_error_on_unreachable() -> None:
+def test_probe_raises_connection_error_on_unreachable(fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException  # type: ignore[import-not-found]
 
     from custom_components.raritan.api import RaritanConnectionError
@@ -230,13 +231,13 @@ def test_probe_raises_connection_error_on_unreachable() -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanConnectionError),
     ):
         api.probe()
 
 
-def test_probe_raises_tls_error_on_certificate_failure() -> None:
+def test_probe_raises_tls_error_on_certificate_failure(fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException  # type: ignore[import-not-found]
 
     from custom_components.raritan.api import RaritanTLSError
@@ -253,13 +254,13 @@ def test_probe_raises_tls_error_on_certificate_failure() -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanTLSError),
     ):
         api.probe()
 
 
-def test_probe_raises_unsupported_error_on_not_supported() -> None:
+def test_probe_raises_unsupported_error_on_not_supported(fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException  # type: ignore[import-not-found]
 
     from custom_components.raritan.api import RaritanUnsupportedError
@@ -276,7 +277,7 @@ def test_probe_raises_unsupported_error_on_not_supported() -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanUnsupportedError),
     ):
         api.probe()
@@ -310,7 +311,9 @@ def test_fetch_telemetry_remaps_http_exception(api: RaritanAPI) -> None:
         api.fetch_telemetry(cap)
 
 
-def test_fetch_telemetry_handles_missing_inlet_sensor_attribute(api: RaritanAPI) -> None:
+def test_fetch_telemetry_handles_missing_inlet_sensor_attribute(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """If a sensor attribute is missing on the Inlet.Sensors struct, the value is None.
 
     Replaces the deleted `_read_inlet` unit test. The same branch is now
@@ -342,7 +345,7 @@ def test_fetch_telemetry_handles_missing_inlet_sensor_attribute(api: RaritanAPI)
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
 
@@ -383,7 +386,7 @@ def _make_outlet_mock_v2(
     return outlet
 
 
-def test_fetch_telemetry_reads_outlets_when_metered(api: RaritanAPI) -> None:
+def test_fetch_telemetry_reads_outlets_when_metered(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """When capabilities.outlet_metering is True, fetch_telemetry reads outlets."""
     from custom_components.raritan.models import CapabilityMatrix
 
@@ -413,7 +416,7 @@ def test_fetch_telemetry_reads_outlets_when_metered(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
 
@@ -427,7 +430,9 @@ def test_fetch_telemetry_reads_outlets_when_metered(api: RaritanAPI) -> None:
     assert payload.outlets[1].voltage == 0.0
 
 
-def test_fetch_telemetry_refreshes_outlet_sensors_after_ttl(api: RaritanAPI) -> None:
+def test_fetch_telemetry_refreshes_outlet_sensors_after_ttl(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Cached outlet sensor structs must be re-fetched once `_OUTLET_SENSORS_TTL`
     elapses. PX3 firmware 4.3.x silently invalidates the cached
     `outlet.getSensors()` Sensor proxies after ~50 s; re-issuing `getSensors()`
@@ -463,7 +468,7 @@ def test_fetch_telemetry_refreshes_outlet_sensors_after_ttl(api: RaritanAPI) -> 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         patch.object(api_mod.time, "monotonic", side_effect=_fake_monotonic),
     ):
         # First tick populates the cache and stamps it at t=1000.
@@ -483,6 +488,7 @@ def test_fetch_telemetry_refreshes_outlet_sensors_after_ttl(api: RaritanAPI) -> 
 
 def test_set_outlet_state_does_not_wipe_outlet_sensor_struct_cache(
     api: RaritanAPI,
+    fake_bulk: MagicMock,
 ) -> None:
     """A write path (set_outlet_state) must not invalidate the outlet sensor
     struct cache populated by fetch_telemetry. Regression for the bug where
@@ -512,7 +518,7 @@ def test_set_outlet_state_does_not_wipe_outlet_sensor_struct_cache(
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         # 1. First tick populates the outlet sensor struct cache.
         first = api.fetch_telemetry(cap)
@@ -534,7 +540,9 @@ def test_set_outlet_state_does_not_wipe_outlet_sensor_struct_cache(
         assert outlet1.getSensors.call_count == 1
 
 
-def test_cycle_outlet_does_not_wipe_outlet_sensor_struct_cache(api: RaritanAPI) -> None:
+def test_cycle_outlet_does_not_wipe_outlet_sensor_struct_cache(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Same invariant as set_outlet_state: cycle_outlet must not break the
     outlet metering cache for the next coordinator tick.
     """
@@ -558,7 +566,7 @@ def test_cycle_outlet_does_not_wipe_outlet_sensor_struct_cache(api: RaritanAPI) 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         api.fetch_telemetry(cap)
         api.cycle_outlet(idx=1)
@@ -567,7 +575,9 @@ def test_cycle_outlet_does_not_wipe_outlet_sensor_struct_cache(api: RaritanAPI) 
         assert outlet.getSensors.call_count == 1
 
 
-def test_reset_inlet_energy_does_not_wipe_outlet_cache(api: RaritanAPI) -> None:
+def test_reset_inlet_energy_does_not_wipe_outlet_cache(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """reset_inlet_energy used to call _refresh_proxies with a minimal cap
     whose outlet_metering=False AND outlet_switching=False, causing
     `not need_outlets` to fire and wipe `_outlets = []` AND
@@ -603,7 +613,7 @@ def test_reset_inlet_energy_does_not_wipe_outlet_cache(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         api.fetch_telemetry(cap)
         api.reset_inlet_energy(idx=1)
@@ -615,7 +625,9 @@ def test_reset_inlet_energy_does_not_wipe_outlet_cache(api: RaritanAPI) -> None:
         )
 
 
-def test_fetch_telemetry_reads_outlet_state_only_when_switching_only(api: RaritanAPI) -> None:
+def test_fetch_telemetry_reads_outlet_state_only_when_switching_only(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Switching but not metering: state read, sensor metrics are None."""
     from custom_components.raritan.models import CapabilityMatrix
 
@@ -648,7 +660,7 @@ def test_fetch_telemetry_reads_outlet_state_only_when_switching_only(api: Rarita
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
 
@@ -657,7 +669,9 @@ def test_fetch_telemetry_reads_outlet_state_only_when_switching_only(api: Rarita
     assert payload.outlets[0].voltage is None  # not metered
 
 
-def test_fetch_telemetry_handles_outlet_label_state_and_invalid_sensor(api: RaritanAPI) -> None:
+def test_fetch_telemetry_handles_outlet_label_state_and_invalid_sensor(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """fetch_telemetry must tolerate getMetaData/getState exceptions and invalid sensor reads.
 
     Replaces the deleted `_read_outlet` unit test. Each per-outlet call is queued
@@ -694,7 +708,7 @@ def test_fetch_telemetry_handles_outlet_label_state_and_invalid_sensor(api: Rari
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
 
@@ -710,7 +724,9 @@ def test_fetch_telemetry_handles_outlet_label_state_and_invalid_sensor(api: Rari
     assert reading.active_energy_wh == 4.0
 
 
-def test_fetch_telemetry_skips_outlets_when_neither_switching_nor_metering(api: RaritanAPI) -> None:
+def test_fetch_telemetry_skips_outlets_when_neither_switching_nor_metering(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Capability flags both False: no outlet reads at all."""
     from custom_components.raritan.models import CapabilityMatrix
 
@@ -729,9 +745,11 @@ def test_fetch_telemetry_skips_outlets_when_neither_switching_nor_metering(api: 
     pdu = MagicMock()
     pdu.getInlets.return_value = []
     pdu.getOutlets.return_value = []
+    pdu.getAlertedSensorManager.return_value.getAlertedSensors.return_value = []
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
     assert payload.outlets == []
@@ -881,7 +899,9 @@ def test_fetch_alerts_returns_empty_when_no_alerts(api: RaritanAPI) -> None:
     assert result == []
 
 
-def test_fetch_alerts_returns_snapshot_with_label_and_state(api: RaritanAPI) -> None:
+def test_fetch_alerts_returns_snapshot_with_label_and_state(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     pdu = MagicMock()
     mgr = MagicMock()
     mgr.getAlertedSensors.return_value = [
@@ -897,6 +917,7 @@ def test_fetch_alerts_returns_snapshot_with_label_and_state(api: RaritanAPI) -> 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         snapshots = api.fetch_alerts(cap)
     assert len(snapshots) == 1
@@ -905,6 +926,103 @@ def test_fetch_alerts_returns_snapshot_with_label_and_state(api: RaritanAPI) -> 
     assert s.parent_label == "/model/pdu/0/inlet/0"
     assert s.alert_state == "CRITICAL"
     assert s.sensor_id == "/model/pdu/0/inlet/0/sensors/current"
+
+
+def test_fetch_alerts_resolves_all_labels_in_one_bulk(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """Every alerted sensor's label is resolved in a SINGLE bulk roundtrip."""
+    pdu = MagicMock()
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = [
+        _make_sensor_data(
+            sensor_target=f"/model/pdu/0/inlet/0/sensors/s{i}",
+            parent_target="/model/pdu/0/inlet/0",
+            state_name="WARNING",
+            sensor_label=f"Sensor {i}",
+        )
+        for i in range(3)
+    ]
+    pdu.getAlertedSensorManager.return_value = mgr
+    cap = _basic_cap()
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        snapshots = api.fetch_alerts(cap)
+    # All three labels resolved...
+    assert [s.sensor_label for s in snapshots] == ["Sensor 0", "Sensor 1", "Sensor 2"]
+    # ...via exactly one BulkRequestHelper instance and one perform_bulk() call.
+    assert fake_bulk.call_count == 1
+    (helper,) = fake_bulk.instances
+    assert helper.add_request.call_count == 3
+    assert helper.perform_bulk.call_count == 1
+
+
+def test_fetch_alerts_degrades_label_on_failed_sub_request(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """A single failed getMetaData sub-request keeps that alert's fallback label."""
+    good = _make_sensor_data(
+        sensor_target="/model/pdu/0/inlet/0/sensors/ok",
+        sensor_label="Good Sensor",
+    )
+    bad = _make_sensor_data(
+        sensor_target="/model/pdu/0/inlet/0/sensors/bad",
+        sensor_label="ignored",
+    )
+    bad.sensor.getMetaData.side_effect = RuntimeError("boom")
+    pdu = MagicMock()
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = [good, bad]
+    pdu.getAlertedSensorManager.return_value = mgr
+    cap = _basic_cap()
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        snapshots = api.fetch_alerts(cap)
+    assert snapshots[0].sensor_label == "Good Sensor"
+    assert snapshots[1].sensor_label == "?"  # fallback after sub-request failure
+    assert fake_bulk.call_count == 1
+
+
+def test_fetch_alerts_degrades_all_labels_on_bulk_failure(api: RaritanAPI) -> None:
+    """A whole-bulk transport failure keeps every alert's fallback label rather
+    than breaking the tick. Also covers a sensor that exposes no getMetaData."""
+    from raritan.rpc import HttpException
+
+    sensors = [
+        _make_sensor_data(
+            sensor_target=f"/model/pdu/0/inlet/0/sensors/s{i}",
+            sensor_label=f"ignored{i}",
+        )
+        for i in range(3)
+    ]
+    sensors[0].sensor.getMetaData = None  # no metadata getter -> fallback label
+    pdu = MagicMock()
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = sensors
+    pdu.getAlertedSensorManager.return_value = mgr
+    cap = _basic_cap()
+
+    def raising_factory(_agent: object) -> MagicMock:
+        inst = MagicMock()
+        inst.perform_bulk.side_effect = HttpException("bulk transport failed")
+        return inst
+
+    fake_cls = MagicMock(side_effect=raising_factory)
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_cls),
+    ):
+        snapshots = api.fetch_alerts(cap)
+
+    assert len(snapshots) == 3
+    assert all(s.sensor_label == "?" for s in snapshots)
 
 
 def test_fetch_alerts_returns_empty_on_auth_error(api: RaritanAPI) -> None:
@@ -994,7 +1112,7 @@ def _basic_cap() -> CapabilityMatrix:
     )
 
 
-def test_reset_inlet_energy_calls_resetValue(api: RaritanAPI) -> None:
+def test_reset_inlet_energy_calls_resetValue(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     pdu = MagicMock()
     inlet = MagicMock()
     sensors = MagicMock()
@@ -1007,13 +1125,13 @@ def test_reset_inlet_energy_calls_resetValue(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         api.reset_inlet_energy(idx=1)
     energy.resetValue.assert_called_once_with()
 
 
-def test_reset_inlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
+def test_reset_inlet_energy_invalid_idx_raises(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     from custom_components.raritan.api import RaritanConnectionError
 
     pdu = MagicMock()
@@ -1023,13 +1141,15 @@ def test_reset_inlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.reset_inlet_energy(idx=99)
 
 
-def test_reset_inlet_energy_unsupported_when_resetValue_missing(api: RaritanAPI) -> None:
+def test_reset_inlet_energy_unsupported_when_resetValue_missing(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     from custom_components.raritan.api import RaritanUnsupportedError
 
     pdu = MagicMock()
@@ -1041,13 +1161,13 @@ def test_reset_inlet_energy_unsupported_when_resetValue_missing(api: RaritanAPI)
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanUnsupportedError),
     ):
         api.reset_inlet_energy(idx=1)
 
 
-def test_reset_outlet_energy_calls_resetValue(api: RaritanAPI) -> None:
+def test_reset_outlet_energy_calls_resetValue(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     pdu = MagicMock()
     outlet = MagicMock()
     sensors = MagicMock()
@@ -1060,13 +1180,13 @@ def test_reset_outlet_energy_calls_resetValue(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         api.reset_outlet_energy(idx=1)
     energy.resetValue.assert_called_once_with()
 
 
-def test_reset_outlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
+def test_reset_outlet_energy_invalid_idx_raises(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     from custom_components.raritan.api import RaritanConnectionError
 
     pdu = MagicMock()
@@ -1075,7 +1195,7 @@ def test_reset_outlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.reset_outlet_energy(idx=99)
@@ -1114,7 +1234,7 @@ def _make_ocp_mock(
     return ocp
 
 
-def test_fetch_telemetry_reads_ocps(api: RaritanAPI) -> None:
+def test_fetch_telemetry_reads_ocps(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """OCPs in cap.ocp_ids -> fetch_telemetry yields OcpReading rows."""
     cap = CapabilityMatrix(
         model="X",
@@ -1140,7 +1260,7 @@ def test_fetch_telemetry_reads_ocps(api: RaritanAPI) -> None:
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch(
             "custom_components.raritan.api.BulkRequestHelper",
-            new=make_fake_bulk_helper_class(),
+            new=fake_bulk,
         ),
     ):
         payload = api.fetch_telemetry(cap)
@@ -1155,7 +1275,9 @@ def test_fetch_telemetry_reads_ocps(api: RaritanAPI) -> None:
     assert payload.ocps[1].current == 0.5
 
 
-def test_fetch_telemetry_ocp_handles_missing_trip_sensor(api: RaritanAPI) -> None:
+def test_fetch_telemetry_ocp_handles_missing_trip_sensor(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Missing trip -> tripped defaults to False."""
     cap = CapabilityMatrix(
         model="X",
@@ -1186,7 +1308,7 @@ def test_fetch_telemetry_ocp_handles_missing_trip_sensor(api: RaritanAPI) -> Non
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch(
             "custom_components.raritan.api.BulkRequestHelper",
-            new=make_fake_bulk_helper_class(),
+            new=fake_bulk,
         ),
     ):
         payload = api.fetch_telemetry(cap)
@@ -1195,7 +1317,9 @@ def test_fetch_telemetry_ocp_handles_missing_trip_sensor(api: RaritanAPI) -> Non
     assert payload.ocps[0].current == 2.0
 
 
-def test_fetch_telemetry_ocp_handles_metadata_exception(api: RaritanAPI) -> None:
+def test_fetch_telemetry_ocp_handles_metadata_exception(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """getMetaData raising -> label falls back to str(idx)."""
     cap = CapabilityMatrix(
         model="X",
@@ -1226,7 +1350,7 @@ def test_fetch_telemetry_ocp_handles_metadata_exception(api: RaritanAPI) -> None
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch(
             "custom_components.raritan.api.BulkRequestHelper",
-            new=make_fake_bulk_helper_class(),
+            new=fake_bulk,
         ),
     ):
         payload = api.fetch_telemetry(cap)
@@ -1280,8 +1404,9 @@ def _make_peripheral_slot(device: MagicMock) -> MagicMock:
     return slot
 
 
-def test_probe_discovers_env_sensors(api: RaritanAPI) -> None:
-    """Env sensor IDs are populated from peripheral DeviceManager."""
+def test_first_tick_discovers_env_sensors(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """Env sensors are populated from the peripheral DeviceManager on the first
+    telemetry tick (probe() defers the walk to keep setup fast)."""
     pdu = MagicMock()
     md = MagicMock()
     nameplate = MagicMock(model="X", serialNumber="S", manufacturer="Raritan")
@@ -1304,23 +1429,27 @@ def test_probe_discovers_env_sensors(api: RaritanAPI) -> None:
     )
     mgr.getDeviceSlots.return_value = [num_slot, state_slot]
     pdu.getPeripheralDeviceManager.return_value = mgr
+    pdu.getAlertedSensorManager.return_value.getAlertedSensors.return_value = []
 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         cap = api.probe()
+        # probe() must NOT walk peripherals.
+        assert cap.env_sensor_ids == ()
+        payload = api.fetch_telemetry(cap)
 
-    # 1 numeric + 1 state sensor (one per slot)
-    assert len(cap.env_sensor_ids) == 2
-    # Stable ID format: "<serial>:n0" for numeric, "<serial>:s0" for state
-    assert "DEV001:n0" in cap.env_sensor_ids
-    assert "DEV002:s0" in cap.env_sensor_ids
+    # 1 numeric + 1 state sensor (one per slot), discovered on the first tick.
+    ids = {r.sensor_id for r in payload.env}
+    assert len(payload.env) == 2
+    assert "DEV001:n0" in ids
+    assert "DEV002:s0" in ids
 
 
-def test_probe_env_discovery_swallows_errors(api: RaritanAPI) -> None:
-    """If peripheral discovery raises, env_sensor_ids = ()."""
+def test_tick_env_discovery_swallows_errors(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """If peripheral discovery raises on the first tick, env stays empty."""
     pdu = MagicMock()
     md = MagicMock()
     nameplate = MagicMock(model="X", serialNumber="S", manufacturer="Raritan")
@@ -1332,15 +1461,18 @@ def test_probe_env_discovery_swallows_errors(api: RaritanAPI) -> None:
     pdu.getOutlets.return_value = []
     pdu.getOverCurrentProtectors.return_value = []
     pdu.getPeripheralDeviceManager.side_effect = RuntimeError("forbidden")
+    pdu.getAlertedSensorManager.return_value.getAlertedSensors.return_value = []
 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         cap = api.probe()
+        payload = api.fetch_telemetry(cap)
 
     assert cap.env_sensor_ids == ()
+    assert payload.env == []
 
 
 def _pdu_with_peripherals(slots: list[MagicMock]) -> MagicMock:
@@ -1351,7 +1483,7 @@ def _pdu_with_peripherals(slots: list[MagicMock]) -> MagicMock:
     return pdu
 
 
-def test_refresh_env_sensors_detects_peripherals(api: RaritanAPI) -> None:
+def test_refresh_env_sensors_detects_peripherals(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """refresh_env_sensors returns the freshly discovered peripheral IDs."""
     pdu = _pdu_with_peripherals(
         [_make_peripheral_slot(_make_peripheral_device(serial="DEV9", numeric=(8, 7, 21.0)))]
@@ -1359,12 +1491,13 @@ def test_refresh_env_sensors_detects_peripherals(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         ids = api.refresh_env_sensors()
     assert "DEV9:n0" in ids
 
 
-def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI) -> None:
+def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """A failed rescan keeps the previously known set instead of wiping it."""
     pdu = _pdu_with_peripherals(
         [_make_peripheral_slot(_make_peripheral_device(serial="DEV9", numeric=(8, 7, 21.0)))]
@@ -1372,6 +1505,7 @@ def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         first = api.refresh_env_sensors()
     assert "DEV9:n0" in first
@@ -1382,7 +1516,50 @@ def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI) -> None:
     assert second == first
 
 
-def test_fetch_telemetry_reads_env_sensors(api: RaritanAPI) -> None:
+def test_walk_env_sensors_batches_slot_reads(api: RaritanAPI) -> None:
+    """Peripheral discovery must batch slot reads into a bounded number of bulk
+    roundtrips, not one synchronous RPC per slot. Each roundtrip costs a TLS
+    handshake on the PDU (~0.6s), so a per-slot walk over ~32 slots dominates
+    discovery latency; batching keeps it constant regardless of slot count.
+    """
+    slots = [
+        _make_peripheral_slot(_make_peripheral_device(serial=f"DEV{i}", numeric=(8, 7, 20.0 + i)))
+        for i in range(10)
+    ]
+    pdu = _pdu_with_peripherals(slots)
+
+    bulk_roundtrips: list[int] = []
+    fake_cls = make_fake_bulk_helper_class()
+    base_factory = fake_cls.side_effect
+
+    def counting_factory(agent: object) -> MagicMock:
+        inst = base_factory(agent)
+        inner = inst.perform_bulk.side_effect
+
+        def counted(*args: object, **kwargs: object) -> list[object]:
+            bulk_roundtrips.append(1)
+            return inner(*args, **kwargs)
+
+        inst.perform_bulk.side_effect = counted
+        return inst
+
+    fake_cls.side_effect = counting_factory
+
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_cls),
+    ):
+        ids = api.refresh_env_sensors()
+
+    assert len(ids) == 10  # behavior preserved: all 10 peripherals discovered
+    # Bounded roundtrips regardless of slot count (was one RPC per slot).
+    assert 1 <= len(bulk_roundtrips) <= 2, (
+        f"expected <=2 bulk roundtrips for 10 slots, got {len(bulk_roundtrips)}"
+    )
+
+
+def test_fetch_telemetry_reads_env_sensors(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """Env numeric + state sensors are read via the bulk helper."""
     pdu = MagicMock()
     md = MagicMock()
@@ -1409,7 +1586,7 @@ def test_fetch_telemetry_reads_env_sensors(api: RaritanAPI) -> None:
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch(
             "custom_components.raritan.api.BulkRequestHelper",
-            new=make_fake_bulk_helper_class(),
+            new=fake_bulk,
         ),
     ):
         cap = api.probe()
@@ -1427,8 +1604,8 @@ def test_fetch_telemetry_reads_env_sensors(api: RaritanAPI) -> None:
     assert contacts[0].value is None
 
 
-def test_probe_env_discovery_handles_http_exception(api: RaritanAPI) -> None:
-    """HttpException from getPeripheralDeviceManager -> env_sensor_ids = ()."""
+def test_tick_env_discovery_handles_http_exception(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """HttpException from getPeripheralDeviceManager on a tick -> env empty."""
     from raritan.rpc import HttpException
 
     pdu = MagicMock()
@@ -1442,29 +1619,22 @@ def test_probe_env_discovery_handles_http_exception(api: RaritanAPI) -> None:
     pdu.getOutlets.return_value = []
     pdu.getOverCurrentProtectors.return_value = []
     pdu.getPeripheralDeviceManager.side_effect = HttpException("HTTP 403 Forbidden")
+    pdu.getAlertedSensorManager.return_value.getAlertedSensors.return_value = []
 
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         cap = api.probe()
+        payload = api.fetch_telemetry(cap)
     assert cap.env_sensor_ids == ()
+    assert payload.env == []
 
 
-def test_probe_env_discovery_skips_empty_or_failing_slots(api: RaritanAPI) -> None:
+def test_env_discovery_skips_empty_or_failing_slots(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     """Slots with getDevice raising or returning None are skipped."""
     pdu = MagicMock()
-    md = MagicMock()
-    nameplate = MagicMock(model="X", serialNumber="S", manufacturer="Raritan")
-    md.nameplate = nameplate
-    md.fwRevision = "4.0.10"
-    md.hwRevision = None
-    pdu.getMetaData.return_value = md
-    pdu.getInlets.return_value = []
-    pdu.getOutlets.return_value = []
-    pdu.getOverCurrentProtectors.return_value = []
-
     mgr = MagicMock()
     bad_slot = MagicMock()
     bad_slot.getDevice.side_effect = RuntimeError("boom")
@@ -1480,16 +1650,18 @@ def test_probe_env_discovery_skips_empty_or_failing_slots(api: RaritanAPI) -> No
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
-        cap = api.probe()
+        ids = api.refresh_env_sensors()
 
     # Only the good slot contributed
-    assert len(cap.env_sensor_ids) == 1
-    assert "DEV-OK:n0" in cap.env_sensor_ids
+    assert len(ids) == 1
+    assert "DEV-OK:n0" in ids
 
 
-def test_fetch_telemetry_env_empty_when_no_peripherals(api: RaritanAPI) -> None:
+def test_fetch_telemetry_env_empty_when_no_peripherals(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """No peripherals -> env list is empty."""
     cap = CapabilityMatrix(
         model="X",
@@ -1506,15 +1678,20 @@ def test_fetch_telemetry_env_empty_when_no_peripherals(api: RaritanAPI) -> None:
     pdu = MagicMock()
     pdu.getInlets.return_value = []
     pdu.getOutlets.return_value = []
+    pdu.getPeripheralDeviceManager.return_value.getDeviceSlots.return_value = []
+    pdu.getAlertedSensorManager.return_value.getAlertedSensors.return_value = []
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
     ):
         payload = api.fetch_telemetry(cap)
     assert payload.env == []
 
 
-def test_reset_outlet_energy_unsupported_when_resetValue_missing(api: RaritanAPI) -> None:
+def test_reset_outlet_energy_unsupported_when_resetValue_missing(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
     """Outlet activeEnergy missing resetValue -> RaritanUnsupportedError."""
     from custom_components.raritan.api import RaritanUnsupportedError
 
@@ -1529,7 +1706,7 @@ def test_reset_outlet_energy_unsupported_when_resetValue_missing(api: RaritanAPI
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch(
             "custom_components.raritan.api.BulkRequestHelper",
-            new=make_fake_bulk_helper_class(),
+            new=fake_bulk,
         ),
         pytest.raises(RaritanUnsupportedError),
     ):
@@ -1551,28 +1728,21 @@ def test_state_or_false_unavailable_returns_false() -> None:
     assert _state_or_false(state) is False
 
 
-def test_classify_sensor_handles_metadata_exception() -> None:
-    """If getMetaData raises, classification falls back to (UNKNOWN, None)."""
+def test_classify_spec_handles_bulk_request_failure() -> None:
+    """A failed bulked getTypeSpec yields an Exception result -> (UNKNOWN, None)."""
     from custom_components.raritan.api import RaritanAPI as _API
 
-    sensor = MagicMock()
-    sensor.getMetaData.side_effect = RuntimeError("boom")
-    assert _API._classify_sensor(sensor) == ("UNKNOWN", None)
+    assert _API._classify_spec(RuntimeError("boom")) == ("UNKNOWN", None)
 
 
-def test_classify_sensor_handles_missing_type_spec() -> None:
-    """MetaData without `type` attribute -> (UNKNOWN, None)."""
+def test_classify_spec_handles_missing_type_spec() -> None:
+    """A None TypeSpec -> (UNKNOWN, None)."""
     from custom_components.raritan.api import RaritanAPI as _API
 
-    sensor = MagicMock()
-    md = MagicMock(spec=["foo"])
-    sensor.getMetaData.return_value = md
-    # spec=['foo'] means accessing .type returns from spec; we want None
-    md.type = None
-    assert _API._classify_sensor(sensor) == ("UNKNOWN", None)
+    assert _API._classify_spec(None) == ("UNKNOWN", None)
 
 
-def test_reset_inlet_energy_remaps_http_exception(api: RaritanAPI) -> None:
+def test_reset_inlet_energy_remaps_http_exception(api: RaritanAPI, fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException
 
     from custom_components.raritan.api import RaritanConnectionError
@@ -1589,7 +1759,7 @@ def test_reset_inlet_energy_remaps_http_exception(api: RaritanAPI) -> None:
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
         pytest.raises(RaritanConnectionError),
     ):
         api.reset_inlet_energy(idx=1)
@@ -1622,3 +1792,263 @@ def test_reset_outlet_energy_remaps_insufficient_privileges_to_auth_error(
         pytest.raises(RaritanAuthError, match="Insufficient privileges"),
     ):
         api.reset_outlet_energy(idx=1)
+
+
+# ---------------------------------------------------------------------------
+# Folded alert poll (one bulk per tick)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_telemetry_collects_alerts_in_payload(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """fetch_telemetry must fold the alert poll into its own bulk and return
+    the snapshots on payload.current_alerts (no separate fetch_alerts call)."""
+    cap = _basic_cap()
+    pdu = MagicMock()
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = []
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = [
+        _make_sensor_data(
+            sensor_target="/model/pdu/0/inlet/0/sensors/current",
+            parent_target="/model/pdu/0/inlet/0",
+            state_name="CRITICAL",
+            sensor_label="RMS Current",
+        )
+    ]
+    pdu.getAlertedSensorManager.return_value = mgr
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        payload = api.fetch_telemetry(cap)
+
+    assert len(payload.current_alerts) == 1
+    assert payload.current_alerts[0].sensor_id == "/model/pdu/0/inlet/0/sensors/current"
+    assert payload.current_alerts[0].alert_state == "CRITICAL"
+
+
+def test_fetch_telemetry_single_bulk_roundtrip_per_tick(api: RaritanAPI) -> None:
+    """A steady-state tick (post-warmup) must issue exactly ONE perform_bulk,
+    proving the alert poll is folded into the telemetry bulk."""
+    cap = _basic_cap()
+    pdu = MagicMock()
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = []
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = []
+    pdu.getAlertedSensorManager.return_value = mgr
+
+    bulk_cls, perform_bulk_calls = _counting_bulk_helper_class()
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=bulk_cls),
+    ):
+        api.fetch_telemetry(cap)  # warmup (may build proxy caches)
+        before = len(perform_bulk_calls)
+        api.fetch_telemetry(cap)  # steady-state tick
+        after = len(perform_bulk_calls)
+
+    assert after - before == 1
+
+
+def _counting_bulk_helper_class() -> tuple[MagicMock, list[None]]:
+    """A fake BulkRequestHelper class that records each perform_bulk() call.
+
+    Returns ``(class_mock, calls_list)`` where ``calls_list`` grows by one
+    every time ``perform_bulk()`` runs on any instance.
+    """
+    calls: list[None] = []
+
+    def _factory(_agent: Any) -> MagicMock:
+        instance = MagicMock()
+        queued: list[tuple[Any, tuple[Any, ...]]] = []
+
+        def _add_request(method: Any, *args: Any) -> None:
+            queued.append((method, args))
+
+        def _perform_bulk() -> list[Any]:
+            calls.append(None)
+            results: list[Any] = []
+            for method, args in queued:
+                try:
+                    results.append(method(*args))
+                except Exception as exc:
+                    results.append(exc)
+            queued.clear()
+            return results
+
+        instance.add_request.side_effect = _add_request
+        instance.perform_bulk.side_effect = _perform_bulk
+        return instance
+
+    return MagicMock(side_effect=_factory), calls
+
+
+def test_fetch_telemetry_alert_collection_is_best_effort(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """If the alerted-sensor manager fails, the tick still succeeds with []."""
+    from raritan.rpc import HttpException
+
+    cap = _basic_cap()
+    pdu = MagicMock()
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = []
+    mgr = MagicMock()
+    mgr.getAlertedSensors.side_effect = HttpException("HTTP 403 Forbidden")
+    pdu.getAlertedSensorManager.return_value = mgr
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        payload = api.fetch_telemetry(cap)
+    assert payload.current_alerts == []
+
+
+# ---------------------------------------------------------------------------
+# Out-of-range writes raise a RaritanAPIError subtype (not bare ValueError)
+# ---------------------------------------------------------------------------
+
+
+def test_set_outlet_state_invalid_idx_raises_raritan_error(api: RaritanAPI) -> None:
+    """Out-of-range idx must raise a RaritanAPIError subtype so the existing
+    except chains in callers catch it (a bare ValueError escapes them)."""
+    from custom_components.raritan.api import RaritanAPIError
+
+    pdu = MagicMock()
+    pdu.getOutlets.return_value = [MagicMock(), MagicMock()]
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        pytest.raises(RaritanAPIError, match="out of range"),
+    ):
+        api.set_outlet_state(idx=99, on=True)
+
+
+def test_cycle_outlet_invalid_idx_raises_raritan_error(api: RaritanAPI) -> None:
+    from custom_components.raritan.api import RaritanAPIError
+
+    pdu = MagicMock()
+    pdu.getOutlets.return_value = [MagicMock()]
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        pytest.raises(RaritanAPIError, match="out of range"),
+    ):
+        api.cycle_outlet(idx=2)
+
+
+def test_reset_inlet_energy_invalid_idx_raises_raritan_error(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    from custom_components.raritan.api import RaritanAPIError
+
+    pdu = MagicMock()
+    pdu.getInlets.return_value = [MagicMock()]
+    pdu.getOutlets.return_value = []
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+        pytest.raises(RaritanAPIError, match="out of range"),
+    ):
+        api.reset_inlet_energy(idx=99)
+
+
+def test_reset_outlet_energy_invalid_idx_raises_raritan_error(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    from custom_components.raritan.api import RaritanAPIError
+
+    pdu = MagicMock()
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = [MagicMock()]
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+        pytest.raises(RaritanAPIError, match="out of range"),
+    ):
+        api.reset_outlet_energy(idx=99)
+
+
+# ---------------------------------------------------------------------------
+# _remap truncates oversized exception bodies
+# ---------------------------------------------------------------------------
+
+
+def test_remap_truncates_long_exception_body() -> None:
+    """A huge SDK exception body (e.g. a PDU response dump) must be truncated
+    before it flows into HA logs via the wrapped RaritanAPIError."""
+    huge = "x" * 5000
+    mapped = RaritanAPI._remap(RuntimeError(huge))
+    assert len(str(mapped)) <= 200
+
+
+# ---------------------------------------------------------------------------
+# probe() defers env discovery off the setup path
+# ---------------------------------------------------------------------------
+
+
+def test_probe_does_not_walk_env_sensors(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """probe() must NOT call the peripheral-slot walk; that ~32-slot walk is
+    deferred to the first coordinator tick so async_setup_entry doesn't block."""
+    pdu = MagicMock()
+    md = MagicMock()
+    nameplate = MagicMock(model="X", serialNumber="S", manufacturer="Raritan")
+    md.nameplate = nameplate
+    md.fwRevision = "4.0.10"
+    md.hwRevision = None
+    pdu.getMetaData.return_value = md
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = []
+    pdu.getOverCurrentProtectors.return_value = []
+    mgr = MagicMock()
+    mgr.getDeviceSlots.return_value = [
+        _make_peripheral_slot(_make_peripheral_device(serial="DEV1", numeric=(8, 7, 21.0)))
+    ]
+    pdu.getPeripheralDeviceManager.return_value = mgr
+
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        cap = api.probe()
+
+    pdu.getPeripheralDeviceManager.assert_not_called()
+    assert cap.env_sensor_ids == ()
+
+
+def test_first_tick_populates_env_sensors(api: RaritanAPI, fake_bulk: MagicMock) -> None:
+    """With probe() no longer discovering env sensors, the first telemetry tick
+    must populate them so entities still appear."""
+    pdu = MagicMock()
+    md = MagicMock()
+    nameplate = MagicMock(model="X", serialNumber="S", manufacturer="Raritan")
+    md.nameplate = nameplate
+    md.fwRevision = "4.0.10"
+    md.hwRevision = None
+    pdu.getMetaData.return_value = md
+    pdu.getInlets.return_value = []
+    pdu.getOutlets.return_value = []
+    pdu.getOverCurrentProtectors.return_value = []
+    mgr = MagicMock()
+    mgr.getDeviceSlots.return_value = [
+        _make_peripheral_slot(_make_peripheral_device(serial="DEV1", numeric=(8, 7, 21.0)))
+    ]
+    pdu.getPeripheralDeviceManager.return_value = mgr
+
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        cap = api.probe()
+        payload = api.fetch_telemetry(cap)
+
+    assert len(payload.env) == 1
+    assert payload.env[0].value == 21.0

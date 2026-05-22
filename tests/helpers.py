@@ -15,6 +15,11 @@ def make_fake_bulk_helper_class() -> MagicMock:
     mirroring the SDK contract where each request can independently fail.
     """
 
+    cls = MagicMock()
+    # Every helper built by the factory is appended here so tests can assert how
+    # many bulk roundtrips happened and how many requests each batched.
+    cls.instances = []
+
     def _factory(_agent: Any) -> MagicMock:
         instance = MagicMock()
         queued: list[tuple[Any, tuple[Any, ...]]] = []
@@ -34,6 +39,8 @@ def make_fake_bulk_helper_class() -> MagicMock:
 
         instance.add_request.side_effect = _add_request
         instance.perform_bulk.side_effect = _perform_bulk
+        cls.instances.append(instance)
         return instance
 
-    return MagicMock(side_effect=_factory)
+    cls.side_effect = _factory
+    return cls
