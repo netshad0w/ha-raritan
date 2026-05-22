@@ -161,7 +161,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 try:
                     await self.hass.async_add_executor_job(self._api.refresh_env_sensors)
                 except Exception as exc:
-                    _LOGGER.debug("Env peripheral rescan failed (non-fatal): %s", exc)
+                    _LOGGER.debug("Env peripheral rescan failed (non-fatal): %s", str(exc)[:200])
             try:
                 payload = await self.hass.async_add_executor_job(
                     self._api.fetch_telemetry, self._capabilities
