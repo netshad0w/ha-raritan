@@ -46,7 +46,9 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{capabilities.serial}",
+            # Use entry_id (not the PDU serial) for the coordinator name: the
+            # name is written to public log files and the serial must not leak.
+            name=f"{DOMAIN}_{entry_id}",
             update_interval=timedelta(seconds=scan_interval),
         )
         self._api = api
@@ -134,8 +136,10 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         if self._lock.locked():
             self._consecutive_skips += 1
             _LOGGER.warning(
+                # Identify by host (not serial): the serial must not leak into
+                # public log files.
                 "Tick overlap on %s (skip %d/%d)",
-                self._capabilities.serial,
+                self._api.host,
                 self._consecutive_skips,
                 TICK_OVERLAP_THRESHOLD,
             )
