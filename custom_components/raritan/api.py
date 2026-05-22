@@ -887,41 +887,38 @@ class RaritanAPI:
             )
         return snapshots
 
-    def reset_inlet_energy(self, *, idx: int) -> None:
-        """Reset the cumulative energy counter on inlet `idx` (1-based)."""
+    def _reset_energy(self, *, proxy_list: list[Any], proxy_name: str, idx: int) -> None:
+        """Reset the cumulative energy counter on ``proxy_list[idx-1]``.
+
+        Shared by :meth:`reset_inlet_energy` and :meth:`reset_outlet_energy`;
+        ``proxy_name`` ("Inlet"/"Outlet") only shapes the error messages. The
+        caller is responsible for populating ``proxy_list`` first.
+        """
         try:
-            self._ensure_inlets_proxy()
-            inlets = self._inlets or []
-            if idx < 1 or idx > len(inlets):
-                raise RaritanConnectionError(f"Inlet index {idx} out of range (1..{len(inlets)})")
-            sensors = inlets[idx - 1].getSensors()
+            if idx < 1 or idx > len(proxy_list):
+                raise RaritanConnectionError(
+                    f"{proxy_name} index {idx} out of range (1..{len(proxy_list)})"
+                )
+            sensors = proxy_list[idx - 1].getSensors()
             energy = getattr(sensors, "activeEnergy", None)
             reset = getattr(energy, "resetValue", None) if energy is not None else None
             if reset is None:
                 raise RaritanUnsupportedError(
-                    f"Inlet {idx} active energy sensor does not support resetValue"
+                    f"{proxy_name} {idx} active energy sensor does not support resetValue"
                 )
             reset()
         except (HttpException, JsonRpcErrorException) as exc:
             raise self._remap(exc) from exc
 
+    def reset_inlet_energy(self, *, idx: int) -> None:
+        """Reset the cumulative energy counter on inlet `idx` (1-based)."""
+        self._ensure_inlets_proxy()
+        self._reset_energy(proxy_list=self._inlets or [], proxy_name="Inlet", idx=idx)
+
     def reset_outlet_energy(self, *, idx: int) -> None:
         """Reset the cumulative energy counter on outlet `idx` (1-based)."""
-        try:
-            self._ensure_outlets_proxy()
-            outlets = self._outlets or []
-            if idx < 1 or idx > len(outlets):
-                raise RaritanConnectionError(f"Outlet index {idx} out of range (1..{len(outlets)})")
-            sensors = outlets[idx - 1].getSensors()
-            energy = getattr(sensors, "activeEnergy", None)
-            reset = getattr(energy, "resetValue", None) if energy is not None else None
-            if reset is None:
-                raise RaritanUnsupportedError(
-                    f"Outlet {idx} active energy sensor does not support resetValue"
-                )
-            reset()
-        except (HttpException, JsonRpcErrorException) as exc:
-            raise self._remap(exc) from exc
+        self._ensure_outlets_proxy()
+        self._reset_energy(proxy_list=self._outlets or [], proxy_name="Outlet", idx=idx)
 
 
 def _value_or_none(reading: Any) -> float | None:
