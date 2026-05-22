@@ -231,9 +231,13 @@ class RaritanAPI:
 
     @staticmethod
     def _remap(exc: Exception) -> RaritanAPIError:
-        msg = str(exc).lower()
+        # Truncate the stringified SDK exception before it flows into HA logs
+        # via ConfigEntryNotReady/UpdateFailed: a raw PDU response body (or a
+        # JSON-RPC error payload) can be large and may echo request internals.
+        text = str(exc)[:200]
+        msg = text.lower()
         if "certificate" in msg or "ssl" in msg or "tls" in msg:
-            return RaritanTLSError(str(exc))
+            return RaritanTLSError(text)
         # "Insufficient privileges" comes from Raritan's JSON-RPC server when
         # the user role lacks the required permission for a call (e.g. Reset
         # Energy Counter, Switch Outlet). Classify as auth so HA surfaces a
@@ -245,10 +249,10 @@ class RaritanAPI:
             or "unauthorized" in msg
             or "insufficient privileges" in msg
         ):
-            return RaritanAuthError(str(exc))
+            return RaritanAuthError(text)
         if "not supported" in msg or "no such method" in msg:
-            return RaritanUnsupportedError(str(exc))
-        return RaritanConnectionError(str(exc))
+            return RaritanUnsupportedError(text)
+        return RaritanConnectionError(text)
 
     def probe(self) -> CapabilityMatrix:
         """Probe the PDU and build a CapabilityMatrix.
