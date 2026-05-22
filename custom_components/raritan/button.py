@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .api import RaritanAPIError
 from .const import DOMAIN
+from .device_info import outlet_device_info
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -25,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: RaritanConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -85,13 +86,7 @@ class RaritanOutletCycleButton(ButtonEntity):
         self._outlet_idx = outlet_idx
         cap = entry.runtime_data.capabilities
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_cycle"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_outlet_{outlet_idx}")},
-            name=f"Outlet {outlet_idx}",
-            manufacturer="Raritan",
-            model=f"{cap.model} outlet",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_device_info = outlet_device_info(cap, outlet_idx)
 
     async def async_press(self) -> None:
         """Power-cycle the outlet."""

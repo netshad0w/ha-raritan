@@ -10,10 +10,15 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .device_info import (
+    env_device_info,
+    env_display_name,
+    ocp_device_info,
+    psu_device_info,
+    slug_sensor_id,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -32,6 +37,7 @@ _ENV_STATE_DEVICE_CLASS: dict[str, BinarySensorDeviceClass | None] = {
     "DRY_CONTACT": BinarySensorDeviceClass.OPENING,
     "POWERED_DRY_CONTACT": BinarySensorDeviceClass.OPENING,
     "ON_OFF": BinarySensorDeviceClass.POWER,
+    "TRIP": BinarySensorDeviceClass.PROBLEM,
     "WATER_LEAK": BinarySensorDeviceClass.MOISTURE,
     "SMOKE": BinarySensorDeviceClass.SMOKE,
     "MOTION": BinarySensorDeviceClass.MOTION,
@@ -40,7 +46,7 @@ _ENV_STATE_DEVICE_CLASS: dict[str, BinarySensorDeviceClass | None] = {
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: RaritanConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -99,13 +105,7 @@ class RaritanOcpTrippedSensor(
         self._ocp_idx = ocp_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_ocp_{ocp_idx}_tripped"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_ocp_{ocp_idx}")},
-            name=f"OCP {ocp_idx}",
-            manufacturer="Raritan",
-            model=f"{cap.model} OCP",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_device_info = ocp_device_info(cap, ocp_idx)
 
     @property
     def is_on(self) -> bool | None:
@@ -134,22 +134,7 @@ class RaritanPsuHealthSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], 
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_psu_{psu_idx}_health"
         self._attr_translation_placeholders = {"idx": str(psu_idx)}
-        # Single-PSU PDUs (the common case) keep the entity flat on the PDU
-        # device. Multi-PSU PDUs (rare, mostly large i7 / 4-pole models) get
-        # a sub-device per PSU so the user can see which one failed without
-        # parsing the entity ID.
-        if cap.nb_psu > 1:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{cap.serial}_psu_{psu_idx}")},
-                name=f"PSU {psu_idx}",
-                manufacturer="Raritan",
-                model=f"{cap.model} PSU",
-                via_device=(DOMAIN, cap.serial),
-            )
-        else:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, cap.serial)},
-            )
+        self._attr_device_info = psu_device_info(cap, psu_idx)
 
     @property
     def is_on(self) -> bool | None:
@@ -171,7 +156,7 @@ class RaritanEnvBinarySensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], 
         self._sensor_id = sensor_id
         cap = coordinator.capabilities
         # Slugify the sensor_id since it may contain colons not safe for unique_id.
-        safe = sensor_id.replace(":", "_").replace("/", "_")
+        safe = slug_sensor_id(sensor_id)
         self._attr_unique_id = f"{cap.serial}_env_{safe}_state"
         # Resolve label and device_class from current data if available
         label = sensor_id
@@ -185,14 +170,8 @@ class RaritanEnvBinarySensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], 
         device_class = _ENV_STATE_DEVICE_CLASS.get(sensor_type)
         if device_class is not None:
             self._attr_device_class = device_class
-        self._attr_name = sensor_type.replace("_", " ").title() if sensor_type else "State"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_env_{safe}")},
-            name=f"Sensor {label}",
-            manufacturer="Raritan",
-            model=f"{cap.model} env",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_name = env_display_name(sensor_type)
+        self._attr_device_info = env_device_info(cap, safe, label)
 
     @property
     def is_on(self) -> bool | None:
