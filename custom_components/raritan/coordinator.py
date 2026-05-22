@@ -257,7 +257,6 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                     "sensor_label": alert.sensor_label,
                     "parent_label": alert.parent_label,
                     "alert_state": alert.alert_state,
-                    "severity": alert.alert_state,
                     "sensor_id": alert.sensor_id,
                 },
             )
