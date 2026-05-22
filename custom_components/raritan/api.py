@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import ssl
 import time
-from typing import Any
+from typing import Any, NamedTuple
 
 from raritan.rpc import (
     Agent,
@@ -27,6 +27,17 @@ from .models import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _EnvSensor(NamedTuple):
+    """A discovered peripheral sensor and how to read it each tick."""
+
+    sensor_id: str
+    proxy: Any
+    sensor_type: str
+    unit: str | None
+    is_state: bool
+    label: str
 
 
 # Inlet.Sensors attribute names that we expose as InletReading fields.
@@ -153,7 +164,7 @@ class RaritanAPI:
         # Env (peripheral) sensors discovered at probe time.
         # Each entry: (sensor_id, sensor_proxy, sensor_type_short, unit_str|None,
         # is_state_sensor, label).
-        self._env_sensors: list[tuple[str, Any, str, str | None, bool, str]] | None = None
+        self._env_sensors: list[_EnvSensor] | None = None
         # Per-PSU state sensors from Pdu.Sensors.powerSupplyStatus, cached at
         # probe time so each tick only batches getState() reads.
         self._psu_state_sensors: list[Any] | None = None
@@ -320,7 +331,7 @@ class RaritanAPI:
         """
         walked = self._walk_env_sensors(pdu)
         self._env_sensors = walked if walked is not None else []
-        return tuple(s[0] for s in self._env_sensors)
+        return tuple(s.sensor_id for s in self._env_sensors)
 
     def refresh_env_sensors(self) -> tuple[str, ...]:
         """Re-discover env peripherals for hot-plug support.
@@ -334,13 +345,11 @@ class RaritanAPI:
         pdu = self._ensure_connected()
         walked = self._walk_env_sensors(pdu)
         if walked is None:
-            return tuple(s[0] for s in (self._env_sensors or []))
+            return tuple(s.sensor_id for s in (self._env_sensors or []))
         self._env_sensors = walked
-        return tuple(s[0] for s in walked)
+        return tuple(s.sensor_id for s in walked)
 
-    def _walk_env_sensors(
-        self, pdu: Any
-    ) -> list[tuple[str, Any, str, str | None, bool, str]] | None:
+    def _walk_env_sensors(self, pdu: Any) -> list[_EnvSensor] | None:
         """Walk peripheral slots and classify sensors.
 
         Returns the discovered list (possibly empty if the PDU genuinely has no
@@ -348,7 +357,7 @@ class RaritanAPI:
         reached, letting callers tell "no peripherals" apart from "couldn't
         ask".
         """
-        env_sensors: list[tuple[str, Any, str, str | None, bool, str]] = []
+        env_sensors: list[_EnvSensor] = []
         try:
             mgr = pdu.getPeripheralDeviceManager()
             slots = list(mgr.getDeviceSlots())
@@ -390,10 +399,14 @@ class RaritanAPI:
 
             if hasattr(sensor_proxy, "getReading"):
                 stype, unit = self._classify_sensor(sensor_proxy)
-                env_sensors.append((f"{base_id}:n0", sensor_proxy, stype, unit, False, label))
+                env_sensors.append(
+                    _EnvSensor(f"{base_id}:n0", sensor_proxy, stype, unit, False, label)
+                )
             elif hasattr(sensor_proxy, "getState"):
                 stype, _unit = self._classify_sensor(sensor_proxy)
-                env_sensors.append((f"{base_id}:s0", sensor_proxy, stype, None, True, label))
+                env_sensors.append(
+                    _EnvSensor(f"{base_id}:s0", sensor_proxy, stype, None, True, label)
+                )
 
         return env_sensors
 
@@ -584,11 +597,11 @@ class RaritanAPI:
 
             # Env (peripheral) sensor reads: best-effort, never break the tick
             env_request_layout: list[bool] = []
-            for _sid, sensor_proxy, _stype, _unit, is_state, _label in env_sensors_list:
-                if is_state:
-                    method = getattr(sensor_proxy, "getState", None)
+            for env_sensor in env_sensors_list:
+                if env_sensor.is_state:
+                    method = getattr(env_sensor.proxy, "getState", None)
                 else:
-                    method = getattr(sensor_proxy, "getReading", None)
+                    method = getattr(env_sensor.proxy, "getReading", None)
                 if method is not None:
                     helper.add_request(method)
                     env_request_layout.append(True)
@@ -725,26 +738,24 @@ class RaritanAPI:
 
             # Env sensor decode
             env: list[EnvSensorReading] = []
-            for (sid, _proxy, stype, unit, is_state, label), present in zip(
-                env_sensors_list, env_request_layout, strict=True
-            ):
+            for env_sensor, present in zip(env_sensors_list, env_request_layout, strict=True):
                 env_value: float | None = None
                 env_state: bool | None = None
                 if present:
                     raw = results[cursor]
                     cursor += 1
-                    if is_state:
+                    if env_sensor.is_state:
                         env_state = _state_or_false(raw) if not isinstance(raw, Exception) else None
                     else:
                         env_value = _value_or_none(raw)
                 env.append(
                     EnvSensorReading(
-                        sensor_id=sid,
-                        label=label,
-                        sensor_type=stype,
+                        sensor_id=env_sensor.sensor_id,
+                        label=env_sensor.label,
+                        sensor_type=env_sensor.sensor_type,
                         value=env_value,
                         state=env_state,
-                        unit=unit,
+                        unit=env_sensor.unit,
                     )
                 )
 
