@@ -6,10 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .device_info import outlet_device_info
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -59,13 +59,7 @@ class RaritanOutletSwitch(CoordinatorEntity["RaritanDataUpdateCoordinator"], Swi
         self._outlet_idx = outlet_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_switch"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_outlet_{outlet_idx}")},
-            name=f"Outlet {outlet_idx}",
-            manufacturer="Raritan",
-            model=f"{cap.model} outlet",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_device_info = outlet_device_info(cap, outlet_idx)
 
     @property
     def is_on(self) -> bool | None:
@@ -75,12 +69,12 @@ class RaritanOutletSwitch(CoordinatorEntity["RaritanDataUpdateCoordinator"], Swi
         return r.on if r is not None else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._set_state(True)
+        await self._set_state(on=True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._set_state(False)
+        await self._set_state(on=False)
 
-    async def _set_state(self, on: bool) -> None:
+    async def _set_state(self, *, on: bool) -> None:
         from homeassistant.exceptions import HomeAssistantError
 
         from .api import RaritanAPIError

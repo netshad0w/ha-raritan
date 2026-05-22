@@ -24,10 +24,16 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .device_info import (
+    env_device_info,
+    env_display_name,
+    inlet_device_info,
+    ocp_device_info,
+    outlet_device_info,
+    slug_sensor_id,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -232,7 +238,7 @@ _ENV_NUMERIC_DEFAULT_UNIT: dict[str, str] = {
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: RaritanConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -242,33 +248,23 @@ async def async_setup_entry(
     coord = runtime.coordinator
     entities: list[CoordinatorEntity[RaritanDataUpdateCoordinator]] = []
     for inlet_idx in range(1, cap.nb_inlets + 1):
-        for desc in INLET_SENSORS:
-            entities.append(
-                RaritanInletSensor(
-                    coordinator=coord,
-                    description=desc,
-                    inlet_idx=inlet_idx,
-                )
-            )
+        entities.extend(
+            RaritanInletSensor(coordinator=coord, description=desc, inlet_idx=inlet_idx)
+            for desc in INLET_SENSORS
+        )
     if cap.outlet_metering:
         for outlet_idx in cap.outlet_ids:
-            for outlet_desc in OUTLET_SENSORS:
-                entities.append(
-                    RaritanOutletSensor(
-                        coordinator=coord,
-                        description=outlet_desc,
-                        outlet_idx=outlet_idx,
-                    )
+            entities.extend(
+                RaritanOutletSensor(
+                    coordinator=coord, description=outlet_desc, outlet_idx=outlet_idx
                 )
-    for ocp_idx in cap.ocp_ids:
-        for ocp_desc in OCP_SENSORS:
-            entities.append(
-                RaritanOcpSensor(
-                    coordinator=coord,
-                    description=ocp_desc,
-                    ocp_idx=ocp_idx,
-                )
+                for outlet_desc in OUTLET_SENSORS
             )
+    for ocp_idx in cap.ocp_ids:
+        entities.extend(
+            RaritanOcpSensor(coordinator=coord, description=ocp_desc, ocp_idx=ocp_idx)
+            for ocp_desc in OCP_SENSORS
+        )
     async_add_entities(entities)
 
     # Env peripherals are hot-pluggable: add numeric ones now and whenever the
@@ -276,6 +272,13 @@ async def async_setup_entry(
     known_env: set[str] = set()
 
     def _is_numeric_env(reading: EnvSensorReading) -> bool:
+        # Intentional gap: a sensor with a numeric value but no unit, an
+        # UNKNOWN/unrecognised sensor_type (not in _ENV_NUMERIC_DEFAULT_UNIT),
+        # and no state falls through here AND through binary_sensor's
+        # _is_state_env, so it is silently dropped. That is deliberate -- HA
+        # cannot classify such a reading (no unit -> not a numeric sensor; no
+        # state -> not a binary sensor), so there is nothing meaningful to
+        # surface. Do not "fix" by emitting a unitless numeric entity.
         if reading.value is None and reading.state is not None:
             return False
         return reading.sensor_type in _ENV_NUMERIC_DEFAULT_UNIT or reading.unit is not None
@@ -321,30 +324,7 @@ class RaritanInletSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sens
         # becomes "..._inlet_idx_voltage" (literal "idx"). Explicitly
         # pre-resolve the slug so the entity_id reads as "..._inlet_1_voltage".
         self._attr_suggested_object_id = f"inlet_{inlet_idx}_{description.key}"
-        # Multi-inlet PDUs (ATS, dual-feed) get a sub-device per inlet so
-        # each feed can be assigned to its own HA Area (e.g. "Source A,
-        # Datacenter PDU rack" vs "Source B, UPS bypass"). Single-inlet
-        # PDUs keep the inlet sensors flat on the PDU device; adding a
-        # sub-device for the only feed would just deepen navigation for the
-        # 99% case without conveying anything.
-        if cap.nb_inlets > 1:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{cap.serial}_inlet_{inlet_idx}")},
-                manufacturer="Raritan",
-                model=f"{cap.model} inlet",
-                name=f"Inlet {inlet_idx}",
-                via_device=(DOMAIN, cap.serial),
-            )
-        else:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, cap.serial)},
-                manufacturer="Raritan",
-                model=cap.model,
-                name=f"Raritan {cap.model} ({cap.serial})",
-                sw_version=cap.firmware,
-                hw_version=cap.hw_revision,
-                configuration_url=f"https://{coordinator.host}/",
-            )
+        self._attr_device_info = inlet_device_info(cap, inlet_idx, coordinator.host)
 
     @property
     def native_value(self) -> float | None:
@@ -379,13 +359,7 @@ class RaritanOutletSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sen
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_{description.key}"
         # No translation_placeholders: the parent device name "Outlet {idx}"
         # already carries the index, so the entity name is just the metric.
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_outlet_{outlet_idx}")},
-            name=f"Outlet {outlet_idx}",
-            manufacturer="Raritan",
-            model=f"{cap.model} outlet",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_device_info = outlet_device_info(cap, outlet_idx)
 
     @property
     def native_value(self) -> float | None:
@@ -418,13 +392,7 @@ class RaritanOcpSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sensor
         self._ocp_idx = ocp_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_ocp_{ocp_idx}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_ocp_{ocp_idx}")},
-            name=f"OCP {ocp_idx}",
-            manufacturer="Raritan",
-            model=f"{cap.model} OCP",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_device_info = ocp_device_info(cap, ocp_idx)
 
     @property
     def native_value(self) -> float | None:
@@ -446,7 +414,7 @@ class RaritanEnvSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sensor
         super().__init__(coordinator)
         self._sensor_id = sensor_id
         cap = coordinator.capabilities
-        safe = sensor_id.replace(":", "_").replace("/", "_")
+        safe = slug_sensor_id(sensor_id)
         self._attr_unique_id = f"{cap.serial}_env_{safe}_value"
         # Resolve label/type from current data if available
         label = sensor_id
@@ -462,14 +430,8 @@ class RaritanEnvSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sensor
         if device_class is not None:
             self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit or _ENV_NUMERIC_DEFAULT_UNIT.get(sensor_type)
-        self._attr_name = sensor_type.replace("_", " ").title() if sensor_type else "Value"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{cap.serial}_env_{safe}")},
-            name=f"Sensor {label}",
-            manufacturer="Raritan",
-            model=f"{cap.model} env",
-            via_device=(DOMAIN, cap.serial),
-        )
+        self._attr_name = env_display_name(sensor_type)
+        self._attr_device_info = env_device_info(cap, safe, label)
 
     @property
     def native_value(self) -> float | None:

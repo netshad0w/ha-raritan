@@ -98,6 +98,24 @@ def test_env_binary_known_type_sets_device_class() -> None:
     assert ent.is_on is True
 
 
+def test_env_binary_trip_sets_problem_device_class() -> None:
+    """A TRIP state sensor (readingtype 14) maps to the PROBLEM device class."""
+    env = [
+        EnvSensorReading(
+            sensor_id="trip:s0",
+            label="Breaker",
+            sensor_type="TRIP",
+            value=None,
+            state=True,
+            unit=None,
+        )
+    ]
+    coord = _coord(_caps(env_ids=("trip:s0",)), _payload(env=env))
+    ent = RaritanEnvBinarySensor(coordinator=coord, sensor_id="trip:s0")
+    assert ent.device_class == "problem"
+    assert ent.is_on is True
+
+
 def test_env_binary_unknown_type_no_device_class() -> None:
     env = [
         EnvSensorReading(
