@@ -10,6 +10,8 @@ from typing import Any
 from raritan.rpc import (
     Agent,
     BulkRequestHelper,
+    HttpException,
+    JsonRpcErrorException,
     pdumodel,
 )
 
@@ -245,11 +247,6 @@ class RaritanAPI:
         This was four sequential round-trips before, which dominated the
         reauth/setup latency on slow PDUs.
         """
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             pdu = self._ensure_connected()
             helper = BulkRequestHelper(self._agent)
@@ -304,11 +301,6 @@ class RaritanAPI:
         entry reload that follows a successful reauth will do that work
         anyway, so doing it twice in the reauth path is wasted latency.
         """
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             pdu = self._ensure_connected()
             metadata = pdu.getMetaData()
@@ -356,10 +348,6 @@ class RaritanAPI:
         reached, letting callers tell "no peripherals" apart from "couldn't
         ask".
         """
-        from raritan.rpc import (
-            HttpException,
-        )
-
         env_sensors: list[tuple[str, Any, str, str | None, bool, str]] = []
         try:
             mgr = pdu.getPeripheralDeviceManager()
@@ -517,11 +505,6 @@ class RaritanAPI:
         roundtrip that batches every sensor reading + outlet getState +
         outlet getMetaData (label) into one HTTP request.
         """
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         start = time.monotonic_ns()
         try:
             self._refresh_proxies(cap)
@@ -810,11 +793,6 @@ class RaritanAPI:
 
     def set_outlet_state(self, *, idx: int, on: bool) -> None:
         """Set outlet to ON or OFF. idx is 1-based."""
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
@@ -827,11 +805,6 @@ class RaritanAPI:
 
     def cycle_outlet(self, *, idx: int) -> None:
         """Power-cycle the outlet (off then on, with PDU's configured delay)."""
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
@@ -859,11 +832,6 @@ class RaritanAPI:
         Best-effort: returns `[]` on auth/unsupported errors so a missing role
         permission can't break the whole telemetry tick.
         """
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             mgr = self._ensure_alerted_sensor_manager()
             sensor_data_list = mgr.getAlertedSensors()
@@ -906,11 +874,6 @@ class RaritanAPI:
 
     def reset_inlet_energy(self, *, idx: int) -> None:
         """Reset the cumulative energy counter on inlet `idx` (1-based)."""
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             self._ensure_inlets_proxy()
             inlets = self._inlets or []
@@ -929,11 +892,6 @@ class RaritanAPI:
 
     def reset_outlet_energy(self, *, idx: int) -> None:
         """Reset the cumulative energy counter on outlet `idx` (1-based)."""
-        from raritan.rpc import (
-            HttpException,
-            JsonRpcErrorException,
-        )
-
         try:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
