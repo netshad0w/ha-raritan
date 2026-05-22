@@ -43,7 +43,6 @@ def _caps(firmware: str) -> CapabilityMatrix:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
 
 

@@ -305,7 +305,6 @@ class RaritanAPI:
             env_sensor_ids=env_sensor_ids,
             outlet_switching=bool(getattr(metadata, "hasSwitchableOutlets", False)),
             outlet_metering=bool(getattr(metadata, "hasMeteredOutlets", False)),
-            has_alerts_engine=True,
             nb_psu=len(self._psu_state_sensors),
         )
 

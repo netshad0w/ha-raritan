@@ -28,7 +28,6 @@ class CapabilityMatrix:
     env_sensor_ids: tuple[str, ...]
     outlet_switching: bool
     outlet_metering: bool
-    has_alerts_engine: bool
     nb_psu: int = 0  # internal controller power supplies exposed via Pdu.Sensors
     mac: str | None = None  # MAC address for DHCP discovery + host-change tracking
 

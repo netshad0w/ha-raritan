@@ -34,7 +34,6 @@ def _caps(*, nb_inlets: int = 1, env_ids: tuple[str, ...] = ()) -> CapabilityMat
         env_sensor_ids=env_ids,
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
 
 

@@ -43,7 +43,6 @@ def capability() -> CapabilityMatrix:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=True,
     )
 
 

@@ -23,7 +23,6 @@ def test_capability_matrix_is_frozen() -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=True,
     )
     with pytest.raises(AttributeError):
         cap.serial = "OTHER"  # type: ignore[misc]
@@ -41,7 +40,6 @@ def test_capability_matrix_firmware_tuple() -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=True,
     )
     assert cap.firmware_tuple == (4, 3, 11)
 
@@ -58,7 +56,6 @@ def test_capability_matrix_firmware_tuple_invalid_returns_zero() -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     assert cap.firmware_tuple == (0, 0, 0)
 
@@ -91,7 +88,6 @@ def test_runtime_data_holds_api_capabilities_coordinator() -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     coord = object()
     rt = RaritanRuntimeData(api=api, capabilities=cap, coordinator=coord)  # type: ignore[arg-type]
@@ -112,7 +108,6 @@ def test_capability_matrix_slots_prevents_new_attributes() -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     with pytest.raises((AttributeError, TypeError)):
         cap.bogus = "x"  # type: ignore[attr-defined]

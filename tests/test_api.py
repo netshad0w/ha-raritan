@@ -32,7 +32,6 @@ def test_probe_returns_capability_matrix(api: RaritanAPI, mock_raritan: MagicMoc
     assert len(cap.outlet_ids) == 36
     assert len(cap.ocp_ids) == 6
     assert cap.env_sensor_ids == ()
-    assert cap.has_alerts_engine is True
 
 
 def test_probe_identity_returns_serial_and_model(api: RaritanAPI, mock_raritan: MagicMock) -> None:
@@ -300,7 +299,6 @@ def test_fetch_telemetry_remaps_http_exception(api: RaritanAPI) -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     pdu.getInlets.side_effect = HttpException("Connection refused")
@@ -330,7 +328,6 @@ def test_fetch_telemetry_handles_missing_inlet_sensor_attribute(api: RaritanAPI)
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     inlet = MagicMock()
@@ -401,7 +398,6 @@ def test_fetch_telemetry_reads_outlets_when_metered(api: RaritanAPI) -> None:
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     pdu.getInlets.return_value = []
@@ -451,7 +447,6 @@ def test_fetch_telemetry_refreshes_outlet_sensors_after_ttl(api: RaritanAPI) -> 
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     outlet = _make_outlet_mock_v2(1, "A1", True)
     pdu = MagicMock()
@@ -507,7 +502,6 @@ def test_set_outlet_state_does_not_wipe_outlet_sensor_struct_cache(
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     outlet1 = _make_outlet_mock_v2(1, "A1", True, voltage=230.0, power=115.0, energy=12345)
     outlet2 = _make_outlet_mock_v2(2, "A2", True, voltage=230.0, power=42.0, energy=999)
@@ -555,7 +549,6 @@ def test_cycle_outlet_does_not_wipe_outlet_sensor_struct_cache(api: RaritanAPI) 
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     outlet = _make_outlet_mock_v2(1, "A1", True, voltage=230.0, power=115.0)
     pdu = MagicMock()
@@ -593,7 +586,6 @@ def test_reset_inlet_energy_does_not_wipe_outlet_cache(api: RaritanAPI) -> None:
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     inlet = MagicMock()
@@ -638,7 +630,6 @@ def test_fetch_telemetry_reads_outlet_state_only_when_switching_only(api: Rarita
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     from raritan.rpc import pdumodel
@@ -685,7 +676,6 @@ def test_fetch_telemetry_handles_outlet_label_state_and_invalid_sensor(api: Rari
         env_sensor_ids=(),
         outlet_switching=True,
         outlet_metering=True,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     outlet = MagicMock()
@@ -735,7 +725,6 @@ def test_fetch_telemetry_skips_outlets_when_neither_switching_nor_metering(api: 
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     pdu.getInlets.return_value = []
@@ -1002,7 +991,6 @@ def _basic_cap() -> CapabilityMatrix:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=True,
     )
 
 
@@ -1139,7 +1127,6 @@ def test_fetch_telemetry_reads_ocps(api: RaritanAPI) -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     pdu.getInlets.return_value = []
@@ -1181,7 +1168,6 @@ def test_fetch_telemetry_ocp_handles_missing_trip_sensor(api: RaritanAPI) -> Non
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     ocp = MagicMock()
@@ -1222,7 +1208,6 @@ def test_fetch_telemetry_ocp_handles_metadata_exception(api: RaritanAPI) -> None
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     ocp = MagicMock()
@@ -1517,7 +1502,6 @@ def test_fetch_telemetry_env_empty_when_no_peripherals(api: RaritanAPI) -> None:
         env_sensor_ids=(),
         outlet_switching=False,
         outlet_metering=False,
-        has_alerts_engine=False,
     )
     pdu = MagicMock()
     pdu.getInlets.return_value = []
