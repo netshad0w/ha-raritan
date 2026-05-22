@@ -316,8 +316,20 @@ async def test_coordinator_no_outlet_event_when_unchanged(
     assert events == []
 
 
+def _payload_with_alerts(alerts: list) -> CoordinatorPayload:
+    return CoordinatorPayload(
+        inlets=[],
+        outlets=[],
+        ocps=[],
+        env=[],
+        current_alerts=alerts,
+        last_tick_duration_ms=0,
+        consecutive_skips=0,
+    )
+
+
 async def test_coordinator_fires_alert_event_on_new_alert(
-    hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
+    hass: HomeAssistant, capability: CapabilityMatrix
 ) -> None:
     from custom_components.raritan.const import EVENT_TYPE_ALERT
     from custom_components.raritan.models import AlertSnapshot
@@ -329,8 +341,7 @@ async def test_coordinator_fires_alert_event_on_new_alert(
         sensor_id="/inlet/0/sensors/current",
     )
     api = MagicMock()
-    api.fetch_telemetry.return_value = fake_payload
-    api.fetch_alerts.side_effect = [[], [snap]]
+    api.fetch_telemetry.side_effect = [_payload_with_alerts([]), _payload_with_alerts([snap])]
     coord = RaritanDataUpdateCoordinator(
         hass=hass, api=api, capabilities=capability, scan_interval=5
     )
@@ -367,23 +378,26 @@ async def test_coordinator_overlap_returns_existing_data_when_present(
         coord._lock.release()  # type: ignore[attr-defined]
 
 
-async def test_coordinator_swallows_fetch_alerts_error_non_fatally(
+async def test_coordinator_does_not_poll_alerts_separately(
     hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
 ) -> None:
-    """If fetch_alerts raises RaritanAPIError (somehow), tick still succeeds."""
+    """The alert poll is folded into fetch_telemetry, so the coordinator must
+    never call fetch_alerts; current_alerts come straight from the payload."""
     api = MagicMock()
     api.fetch_telemetry.return_value = fake_payload
-    api.fetch_alerts.side_effect = RaritanConnectionError("transient")
+    # If the coordinator wrongly called this, it would blow up the tick.
+    api.fetch_alerts.side_effect = RaritanConnectionError("must not be called")
     coord = RaritanDataUpdateCoordinator(
         hass=hass, api=api, capabilities=capability, scan_interval=5
     )
     payload = await coord._async_update_data()
     assert payload is fake_payload
     assert payload.current_alerts == []
+    api.fetch_alerts.assert_not_called()
 
 
 async def test_coordinator_does_not_re_fire_existing_alert(
-    hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
+    hass: HomeAssistant, capability: CapabilityMatrix
 ) -> None:
     """An alert seen in the previous tick must not fire a new event."""
     from custom_components.raritan.const import EVENT_TYPE_ALERT
@@ -396,8 +410,7 @@ async def test_coordinator_does_not_re_fire_existing_alert(
         sensor_id="/dup/0",
     )
     api = MagicMock()
-    api.fetch_telemetry.return_value = fake_payload
-    api.fetch_alerts.return_value = [snap]
+    api.fetch_telemetry.side_effect = [_payload_with_alerts([snap]), _payload_with_alerts([snap])]
     coord = RaritanDataUpdateCoordinator(
         hass=hass, api=api, capabilities=capability, scan_interval=5
     )
@@ -410,7 +423,7 @@ async def test_coordinator_does_not_re_fire_existing_alert(
 
 
 async def test_coordinator_no_alert_event_when_alert_disappears(
-    hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
+    hass: HomeAssistant, capability: CapabilityMatrix
 ) -> None:
     from custom_components.raritan.const import EVENT_TYPE_ALERT
     from custom_components.raritan.models import AlertSnapshot
@@ -422,8 +435,7 @@ async def test_coordinator_no_alert_event_when_alert_disappears(
         sensor_id="/test/0",
     )
     api = MagicMock()
-    api.fetch_telemetry.return_value = fake_payload
-    api.fetch_alerts.side_effect = [[snap], []]
+    api.fetch_telemetry.side_effect = [_payload_with_alerts([snap]), _payload_with_alerts([])]
     coord = RaritanDataUpdateCoordinator(
         hass=hass, api=api, capabilities=capability, scan_interval=5
     )
@@ -630,3 +642,136 @@ async def test_unreachable_tracking_noop_without_entry_id(
         await coord._async_update_data()
     # No entry_id -> no issue keyed anywhere.
     assert not ir.async_get(hass).issues
+
+
+# ---------------------------------------------------------------------------
+# One roundtrip per tick: alerts folded into telemetry, no separate fetch_alerts
+# ---------------------------------------------------------------------------
+
+
+async def test_coordinator_tick_does_not_call_fetch_alerts_separately(
+    hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
+) -> None:
+    """The alert poll is folded into fetch_telemetry's single bulk; the
+    coordinator must NOT issue a second roundtrip via api.fetch_alerts."""
+    api = MagicMock()
+    api.fetch_telemetry.return_value = fake_payload
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, api=api, capabilities=capability, scan_interval=5
+    )
+    await coord._async_update_data()
+    api.fetch_alerts.assert_not_called()
+
+
+async def test_coordinator_fires_alert_event_from_payload(
+    hass: HomeAssistant, capability: CapabilityMatrix
+) -> None:
+    """Alert bus events must fire from payload.current_alerts (the folded poll)."""
+    from custom_components.raritan.const import EVENT_TYPE_ALERT
+    from custom_components.raritan.models import AlertSnapshot
+
+    snap = AlertSnapshot(
+        sensor_label="RMS Current",
+        parent_label="/inlet/0",
+        alert_state="CRITICAL",
+        sensor_id="/inlet/0/sensors/current",
+    )
+
+    def _payload(alerts: list) -> CoordinatorPayload:
+        return CoordinatorPayload(
+            inlets=[],
+            outlets=[],
+            ocps=[],
+            env=[],
+            current_alerts=alerts,
+            last_tick_duration_ms=0,
+            consecutive_skips=0,
+        )
+
+    api = MagicMock()
+    api.fetch_telemetry.side_effect = [_payload([]), _payload([snap])]
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, api=api, capabilities=capability, scan_interval=5
+    )
+    events: list = []
+    hass.bus.async_listen(EVENT_TYPE_ALERT, lambda e: events.append(e))
+    await coord._async_update_data()  # baseline []
+    await coord._async_update_data()  # new alert -> event
+    await hass.async_block_till_done()
+    assert len(events) == 1
+    assert events[0].data["sensor_id"] == "/inlet/0/sensors/current"
+    assert events[0].data["alert_state"] == "CRITICAL"
+    # Finding #9: no duplicate "severity" key (it duplicated alert_state).
+    assert "severity" not in events[0].data
+
+
+# ---------------------------------------------------------------------------
+# Serial must not leak into the coordinator name or overlap warning (#4)
+# ---------------------------------------------------------------------------
+
+
+async def test_coordinator_name_does_not_embed_serial(
+    hass: HomeAssistant, fake_payload: CoordinatorPayload
+) -> None:
+    """The DataUpdateCoordinator name (logged) must use entry_id, not serial."""
+    cap = CapabilityMatrix(
+        model="X",
+        firmware="4.0.10",
+        serial="SECRET_SERIAL_123",
+        hw_revision=None,
+        nb_inlets=0,
+        outlet_ids=(),
+        ocp_ids=(),
+        env_sensor_ids=(),
+        outlet_switching=False,
+        outlet_metering=False,
+    )
+    api = _make_api(fake_payload)
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, api=api, capabilities=cap, scan_interval=5, entry_id="ENTRY_XYZ"
+    )
+    assert "SECRET_SERIAL_123" not in coord.name
+    assert "ENTRY_XYZ" in coord.name
+
+
+async def test_coordinator_overlap_warning_does_not_embed_serial(
+    hass: HomeAssistant, capability: CapabilityMatrix, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The tick-overlap WARNING must not contain the PDU serial."""
+    api = _make_api(_fake_payload_with_serial("SECRET_SERIAL_999"))
+    cap = CapabilityMatrix(
+        model="X",
+        firmware="4.0.10",
+        serial="SECRET_SERIAL_999",
+        hw_revision=None,
+        nb_inlets=0,
+        outlet_ids=(),
+        ocp_ids=(),
+        env_sensor_ids=(),
+        outlet_switching=False,
+        outlet_metering=False,
+    )
+    api.host = "10.9.9.9"
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, api=api, capabilities=cap, scan_interval=5, entry_id="ENTRY1"
+    )
+    coord._lock = asyncio.Lock()  # type: ignore[attr-defined]
+    await coord._lock.acquire()
+    try:
+        with caplog.at_level("WARNING"):
+            await coord._async_update_data()
+    finally:
+        coord._lock.release()
+    assert "SECRET_SERIAL_999" not in caplog.text
+
+
+def _fake_payload_with_serial(_serial: str) -> CoordinatorPayload:
+    return CoordinatorPayload(
+        inlets=[],
+        outlets=[],
+        ocps=[],
+        env=[],
+        current_alerts=[],
+        last_tick_duration_ms=0,
+        consecutive_skips=0,
+    )

@@ -181,15 +181,9 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
             # Diff outlets against the previous tick, firing bus events for any flips.
             self._fire_outlet_state_change_events(payload.outlets)
 
-            # Best-effort alert poll: api.fetch_alerts swallows auth/unsupported.
-            try:
-                current_alerts = await self.hass.async_add_executor_job(
-                    self._api.fetch_alerts, self._capabilities
-                )
-            except RaritanAPIError as exc:
-                _LOGGER.debug("fetch_alerts failed (non-fatal): %s", exc)
-                current_alerts = []
-            payload.current_alerts = current_alerts
+            # The alert poll is folded into fetch_telemetry's single bulk, so
+            # alerts arrive on the payload (one roundtrip per tick, not two).
+            current_alerts = payload.current_alerts
             self._fire_alert_events(current_alerts)
 
             self._previous_outlets = list(payload.outlets)
