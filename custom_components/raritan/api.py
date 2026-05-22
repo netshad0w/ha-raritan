@@ -812,7 +812,7 @@ class RaritanAPI:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
             if idx < 1 or idx > len(outlets):
-                raise ValueError(f"Outlet index {idx} out of range (1..{len(outlets)})")
+                raise RaritanConnectionError(f"Outlet index {idx} out of range (1..{len(outlets)})")
             ps = pdumodel.Outlet.PowerState
             outlets[idx - 1].setPowerState(ps.PS_ON if on else ps.PS_OFF)
         except (HttpException, JsonRpcErrorException) as exc:
@@ -824,7 +824,7 @@ class RaritanAPI:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
             if idx < 1 or idx > len(outlets):
-                raise ValueError(f"Outlet index {idx} out of range (1..{len(outlets)})")
+                raise RaritanConnectionError(f"Outlet index {idx} out of range (1..{len(outlets)})")
             outlets[idx - 1].cyclePowerState()
         except (HttpException, JsonRpcErrorException) as exc:
             raise self._remap(exc) from exc
@@ -893,7 +893,7 @@ class RaritanAPI:
             self._ensure_inlets_proxy()
             inlets = self._inlets or []
             if idx < 1 or idx > len(inlets):
-                raise ValueError(f"Inlet index {idx} out of range (1..{len(inlets)})")
+                raise RaritanConnectionError(f"Inlet index {idx} out of range (1..{len(inlets)})")
             sensors = inlets[idx - 1].getSensors()
             energy = getattr(sensors, "activeEnergy", None)
             reset = getattr(energy, "resetValue", None) if energy is not None else None
@@ -911,7 +911,7 @@ class RaritanAPI:
             self._ensure_outlets_proxy()
             outlets = self._outlets or []
             if idx < 1 or idx > len(outlets):
-                raise ValueError(f"Outlet index {idx} out of range (1..{len(outlets)})")
+                raise RaritanConnectionError(f"Outlet index {idx} out of range (1..{len(outlets)})")
             sensors = outlets[idx - 1].getSensors()
             energy = getattr(sensors, "activeEnergy", None)
             reset = getattr(energy, "resetValue", None) if energy is not None else None

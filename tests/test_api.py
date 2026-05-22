@@ -778,12 +778,14 @@ def test_set_outlet_state_off_calls_setPowerState_with_PS_OFF(api: RaritanAPI) -
 
 
 def test_set_outlet_state_invalid_idx_raises_value_error(api: RaritanAPI) -> None:
+    from custom_components.raritan.api import RaritanConnectionError
+
     pdu = MagicMock()
     pdu.getOutlets.return_value = [MagicMock(), MagicMock()]
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        pytest.raises(ValueError, match="out of range"),
+        pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.set_outlet_state(idx=99, on=True)
 
@@ -801,12 +803,14 @@ def test_cycle_outlet_calls_cyclePowerState(api: RaritanAPI) -> None:
 
 
 def test_cycle_outlet_invalid_idx_raises_value_error(api: RaritanAPI) -> None:
+    from custom_components.raritan.api import RaritanConnectionError
+
     pdu = MagicMock()
     pdu.getOutlets.return_value = [MagicMock()]
     with (
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
-        pytest.raises(ValueError, match="out of range"),
+        pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.cycle_outlet(idx=2)
 
@@ -1022,6 +1026,8 @@ def test_reset_inlet_energy_calls_resetValue(api: RaritanAPI) -> None:
 
 
 def test_reset_inlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
+    from custom_components.raritan.api import RaritanConnectionError
+
     pdu = MagicMock()
     inlet = MagicMock()
     pdu.getInlets.return_value = [inlet]
@@ -1030,7 +1036,7 @@ def test_reset_inlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
-        pytest.raises(ValueError, match="out of range"),
+        pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.reset_inlet_energy(idx=99)
 
@@ -1073,6 +1079,8 @@ def test_reset_outlet_energy_calls_resetValue(api: RaritanAPI) -> None:
 
 
 def test_reset_outlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
+    from custom_components.raritan.api import RaritanConnectionError
+
     pdu = MagicMock()
     pdu.getInlets.return_value = []
     pdu.getOutlets.return_value = [MagicMock()]
@@ -1080,7 +1088,7 @@ def test_reset_outlet_energy_invalid_idx_raises(api: RaritanAPI) -> None:
         patch("custom_components.raritan.api.Agent"),
         patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
         patch("custom_components.raritan.api.BulkRequestHelper", new=make_fake_bulk_helper_class()),
-        pytest.raises(ValueError, match="out of range"),
+        pytest.raises(RaritanConnectionError, match="out of range"),
     ):
         api.reset_outlet_energy(idx=99)
 
