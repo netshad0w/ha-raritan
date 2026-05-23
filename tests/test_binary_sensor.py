@@ -140,7 +140,7 @@ async def test_ocp_sub_device_hierarchy(hass: HomeAssistant, mock_raritan: Magic
     ocp_devs = [
         d
         for d in devreg.devices.values()
-        if d.via_device_id == pdu_dev.id and d.name and d.name.startswith("OCP ")
+        if d.via_device_id == pdu_dev.id and any("_ocp_" in i for _, i in d.identifiers)
     ]
     assert len(ocp_devs) == 6
 

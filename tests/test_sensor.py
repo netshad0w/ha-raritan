@@ -256,8 +256,11 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
         if d.via_device_id == pdu_dev.id and any("_inlet_" in i for _, i in d.identifiers)
     ]
     assert len(inlet_devs) == 2
+    from custom_components.raritan.device_info import pdu_device_name
+
+    prefix = pdu_device_name(entry.runtime_data.capabilities)
     inlet_names = sorted(d.name or "" for d in inlet_devs)
-    assert inlet_names == ["Inlet 1", "Inlet 2"]
+    assert inlet_names == [f"{prefix} Inlet 1", f"{prefix} Inlet 2"]
 
 
 async def test_outlet_sensors_have_sub_device_hierarchy(
@@ -284,9 +287,13 @@ async def test_outlet_sensors_have_sub_device_hierarchy(
     pdu_dev = next(d for d in devreg.devices.values() if (DOMAIN, "TEST00000001") in d.identifiers)
     outlet_devs = [d for d in devreg.devices.values() if d.via_device_id == pdu_dev.id]
     assert len(outlet_devs) == 2
-    # Names should be "Outlet 1" and "Outlet 2"
+    # Names are PDU-qualified so two PDUs never expose a bare "Outlet 24".
+    from custom_components.raritan.device_info import pdu_device_name
+
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    prefix = pdu_device_name(entry.runtime_data.capabilities)
     outlet_names = sorted(d.name for d in outlet_devs)
-    assert outlet_names == ["Outlet 1", "Outlet 2"]
+    assert outlet_names == [f"{prefix} Outlet 1", f"{prefix} Outlet 2"]
 
 
 async def test_ocp_current_sensors_created(hass: HomeAssistant, mock_raritan: MagicMock) -> None:
