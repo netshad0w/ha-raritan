@@ -96,6 +96,8 @@ The config flow asks for:
 - **Verify TLS certificate** (default on; off raises a repair issue).
 - **CA bundle** (optional path inside HA config, for self-signed PKI).
 
+To change or remove the CA bundle after initial setup, use **Reconfigure** (the reauthentication banner only prompts for username and password).
+
 Polling interval is editable post-setup via **Configure** on the integration card (2-300 s).
 
 ## Use cases
