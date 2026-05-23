@@ -7,9 +7,10 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_CA_BUNDLE, CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from .const import CONF_CA_BUNDLE
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -50,6 +51,7 @@ REDACTED_KEYS = {
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: RaritanConfigEntry
 ) -> dict[str, Any]:
+    """Return a redacted diagnostics dump for a Raritan config entry."""
     runtime = entry.runtime_data
     coord = runtime.coordinator
 

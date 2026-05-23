@@ -4,15 +4,27 @@ from __future__ import annotations
 
 from typing import Final
 
+# Re-exported from homeassistant.const so the integration has a single source of
+# truth for these keys. They keep the same string values HA uses ("host",
+# "username", "password", "scan_interval"); importing them avoids redefining the
+# strings while letting the rest of the integration keep `from .const import ...`.
+from homeassistant.const import (  # noqa: F401
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
+
 DOMAIN: Final = "raritan"
 
-# Config keys
-CONF_HOST: Final = "host"
-CONF_USERNAME: Final = "username"
-CONF_PASSWORD: Final = "password"
+# Config keys without a homeassistant.const equivalent.
 CONF_VERIFY_TLS: Final = "verify_tls"
 CONF_CA_BUNDLE: Final = "ca_bundle"
-CONF_SCAN_INTERVAL: Final = "scan_interval"
+
+# Accepted file extensions for a user-supplied CA bundle. os.path.isfile() alone
+# would accept any host path (e.g. /etc/passwd) and hand it to the TLS stack to
+# be parsed as PEM, so the path must carry one of these extensions.
+CA_BUNDLE_EXTENSIONS: Final = (".pem", ".crt", ".cer")
 
 # Defaults
 DEFAULT_SCAN_INTERVAL: Final = 5  # seconds

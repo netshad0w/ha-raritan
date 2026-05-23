@@ -36,11 +36,13 @@
       "invalid_auth": "Identifiants invalides",
       "cannot_connect": "Impossible de joindre le PDU",
       "tls_failed": "Échec de la vérification du certificat TLS",
-      "ca_bundle_not_found": "Le chemin du CA bundle ne pointe pas vers un fichier lisible",
+      "ca_bundle_not_found": "Le chemin du CA bundle ne pointe pas vers un fichier .pem, .crt ou .cer lisible",
+      "invalid_host": "L'hôte n'est pas un nom d'hôte ou une adresse IP valide",
       "unknown": "Erreur inconnue"
     },
     "abort": {
       "already_configured": "Ce PDU est déjà configuré",
+      "invalid_host": "L'adresse découverte n'est pas un nom d'hôte ou une adresse IP valide",
       "reauth_serial_mismatch": "Le PDU à cette adresse a un numéro de série différent de celui initialement configuré. Abandon pour éviter une substitution silencieuse de matériel.",
       "reauth_successful": "Ré-authentification réussie.",
       "reconfigure_serial_mismatch": "Le PDU à cette adresse a un numéro de série différent de celui initialement configuré. Abandon pour éviter une substitution silencieuse de matériel.",
