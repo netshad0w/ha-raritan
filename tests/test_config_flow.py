@@ -55,6 +55,27 @@ async def test_user_step_creates_entry_on_success(
     assert entries[0].unique_id == "TEST00000001"
 
 
+async def test_user_step_strips_host_whitespace(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """Surrounding whitespace on the host is accepted and stored trimmed."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "  10.0.0.1  ",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    # Stored value is trimmed so the runtime ``https://{host}/`` URL is well-formed.
+    assert result["data"][CONF_HOST] == "10.0.0.1"
+
+
 async def test_user_step_auth_error_shows_form_again(hass: HomeAssistant) -> None:
     with patch("custom_components.raritan.config_flow.RaritanAPI") as api_cls:
         api_cls.return_value.probe.side_effect = RaritanAuthError("forbidden")
@@ -113,6 +134,71 @@ async def test_user_step_tls_error(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "tls_failed"}
 
 
+async def test_user_step_unknown_error_shows_form_again(hass: HomeAssistant) -> None:
+    """A generic RaritanAPIError on the user step maps to the 'unknown' slot."""
+    from custom_components.raritan.api import RaritanAPIError
+
+    with patch("custom_components.raritan.config_flow.RaritanAPI") as api_cls:
+        api_cls.return_value.probe.side_effect = RaritanAPIError("weird")
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_HOST: "10.0.0.1",
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "secret",
+                CONF_VERIFY_TLS: True,
+            },
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+
+
+async def test_user_step_rejects_empty_host(hass: HomeAssistant) -> None:
+    """A blank host is rejected before any probe."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "   ",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_host"}
+
+
+async def test_reauth_resolves_ca_bundle_in_entry_data(
+    hass: HomeAssistant, mock_raritan: MagicMock, tmp_path
+) -> None:
+    """Reauth stores the resolved CA bundle realpath from the merged data."""
+    import ssl as _ssl
+
+    ca = tmp_path / "reauth.pem"
+    ca.write_text("dummy")
+    resolved = str(ca.resolve())
+
+    entry = await _setup_entry(hass, password="old")
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_CA_BUNDLE: str(ca)})
+
+    with patch.object(_ssl, "create_default_context", return_value=MagicMock()):
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "new"},
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.data[CONF_CA_BUNDLE] == resolved
+
+
 async def test_user_step_rejects_duplicate_serial(
     hass: HomeAssistant, mock_raritan: MagicMock
 ) -> None:
@@ -168,6 +254,45 @@ async def test_user_step_with_ca_bundle(hass: HomeAssistant, mock_raritan: Magic
     assert result["data"][CONF_CA_BUNDLE] == str(ca)
 
 
+async def test_user_step_ca_bundle_stored_as_resolved_path(
+    hass: HomeAssistant, mock_raritan: MagicMock, tmp_path
+) -> None:
+    """The CA bundle stored in entry data is the resolved realpath.
+
+    _ca_bundle_usable validates os.path.realpath(...); to avoid a TOCTOU where
+    the unresolved path (e.g. via a symlink swapped after validation) is the one
+    actually loaded by the TLS stack, the resolved path is what gets stored and
+    later loaded.
+    """
+    import ssl as _ssl
+
+    real = tmp_path / "real.pem"
+    real.write_text("dummy")
+    link = tmp_path / "link.pem"
+    link.symlink_to(real)
+    # Resolve via pathlib (avoids ASYNC240 on os.path in an async test).
+    resolved = str(link.resolve())
+
+    with patch.object(_ssl, "create_default_context", return_value=MagicMock()):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_HOST: "10.0.0.1",
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "secret",
+                CONF_VERIFY_TLS: True,
+                CONF_CA_BUNDLE: str(link),
+            },
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+    # Stored path is the resolved target, not the (swappable) symlink.
+    assert result["data"][CONF_CA_BUNDLE] == resolved
+    assert result["data"][CONF_CA_BUNDLE] != str(link)
+
+
 async def test_user_step_ca_bundle_not_found(hass: HomeAssistant) -> None:
     """A CA bundle path that is not a readable file re-shows the form with an error."""
     result = await hass.config_entries.flow.async_init(
@@ -185,6 +310,79 @@ async def test_user_step_ca_bundle_not_found(hass: HomeAssistant) -> None:
     )
     assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"] == {"base": "ca_bundle_not_found"}
+
+
+async def test_user_step_ca_bundle_rejects_non_cert_extension(
+    hass: HomeAssistant, tmp_path
+) -> None:
+    """A readable file without a cert extension (e.g. /etc/passwd) is rejected.
+
+    os.path.isfile() alone would happily accept any host path and hand it to
+    the TLS stack to be parsed as PEM; gate on a certificate file extension so
+    arbitrary files cannot be opened/parsed.
+    """
+    bogus = tmp_path / "passwd"
+    bogus.write_text("root:x:0:0:root:/root:/bin/bash\n")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "10.0.0.1",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+            CONF_CA_BUNDLE: str(bogus),
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "ca_bundle_not_found"}
+
+
+async def test_user_step_rejects_malformed_host(hass: HomeAssistant) -> None:
+    """A host that is not a valid hostname / IP is rejected before any probe.
+
+    CONF_HOST is string-formatted into a URL at runtime, so a malformed value
+    (spaces, slashes, embedded scheme) must never reach that point.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "http://10.0.0.1/evil",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_host"}
+
+
+async def test_user_step_rejects_ipv6_literal(hass: HomeAssistant) -> None:
+    """A bare IPv6 literal is rejected before probe.
+
+    CONF_HOST becomes ``https://{host}/`` at runtime; a bare IPv6 literal
+    (e.g. ``::1``) yields a malformed URL that breaks http.client. Raritan PDUs
+    are IPv4/hostname in practice, so reject IPv6 with the invalid_host error.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "::1",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_host"}
 
 
 async def _setup_entry(hass: HomeAssistant, password: str = "secret") -> Any:
@@ -338,6 +536,53 @@ async def test_reauth_serial_mismatch_aborts(hass: HomeAssistant, mock_raritan: 
         )
     assert result["type"] == data_entry_flow.FlowResultType.ABORT
     assert result["reason"] == "reauth_serial_mismatch"
+
+
+async def test_reauth_rejects_invalid_host_in_entry_data(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """Reauth re-validates the (merged) host before probing.
+
+    If an entry somehow carries a malformed host, reauth must surface
+    invalid_host and never reach probe_identity, since the host would be
+    string-formatted into a URL.
+    """
+    entry = await _setup_entry(hass, password="old")
+    # Corrupt the stored host so the merged reauth data is malformed.
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_HOST: "http://evil/path"}
+    )
+
+    with patch("custom_components.raritan.config_flow.RaritanAPI") as api_cls:
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "new"},
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_host"}
+    # The probe must not have been attempted on a malformed host.
+    api_cls.return_value.probe_identity.assert_not_called()
+
+
+async def test_reauth_rejects_missing_ca_bundle(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """Reauth re-validates the CA bundle before probing."""
+    entry = await _setup_entry(hass, password="old")
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_CA_BUNDLE: "/nonexistent/ca.pem"}
+    )
+
+    with patch("custom_components.raritan.config_flow.RaritanAPI") as api_cls:
+        result = await _start_reauth(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "new"},
+        )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "ca_bundle_not_found"}
+    api_cls.return_value.probe_identity.assert_not_called()
 
 
 async def test_options_flow_updates_scan_interval(

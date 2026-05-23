@@ -36,11 +36,13 @@
       "invalid_auth": "Invalid username or password",
       "cannot_connect": "Cannot reach the PDU",
       "tls_failed": "TLS certificate verification failed",
-      "ca_bundle_not_found": "The CA bundle path does not point to a readable file",
+      "ca_bundle_not_found": "The CA bundle path does not point to a readable .pem, .crt, or .cer file",
+      "invalid_host": "The host is not a valid hostname or IP address",
       "unknown": "Unknown error"
     },
     "abort": {
       "already_configured": "This PDU is already configured",
+      "invalid_host": "The discovered address is not a valid hostname or IP address",
       "reauth_serial_mismatch": "The PDU at this address has a different serial than the one originally configured. Aborted to prevent silent device swap.",
       "reauth_successful": "Re-authentication successful.",
       "reconfigure_serial_mismatch": "The PDU at this address has a different serial than the one originally configured. Aborted to prevent silent device swap.",

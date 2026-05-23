@@ -87,6 +87,20 @@ async def test_dhcp_updates_host_of_existing_entry(
     assert entry.data[CONF_HOST] == "10.0.0.250"
 
 
+async def test_dhcp_aborts_on_invalid_host(hass: HomeAssistant) -> None:
+    """A DHCP lease IP that fails host validation aborts the flow.
+
+    The lease IP is string-formatted into a URL, so a malformed value (e.g. an
+    IPv6 literal that breaks http.client) must abort rather than be carried into
+    entry data.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_DHCP}, data=_dhcp("::1")
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "invalid_host"
+
+
 async def test_dhcp_same_host_no_change(hass: HomeAssistant, mock_raritan: MagicMock) -> None:
     await _setup(hass, host="10.0.0.1")
     entry = hass.config_entries.async_entries(DOMAIN)[0]

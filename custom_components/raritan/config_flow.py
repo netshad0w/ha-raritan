@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 
@@ -23,11 +31,8 @@ from .api import (
     RaritanTLSError,
 )
 from .const import (
+    CA_BUNDLE_EXTENSIONS,
     CONF_CA_BUNDLE,
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_SCAN_INTERVAL,
-    CONF_USERNAME,
     CONF_VERIFY_TLS,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_VERIFY_TLS,
@@ -35,6 +40,67 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
+
+# A single hostname label: alphanumeric, may contain hyphens but not at the
+# ends. A full hostname is one or more such labels joined by dots (a trailing
+# dot for the root zone is allowed). IPv4/IPv6 are validated separately.
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}\.?$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*\.?$"
+)
+
+
+def _is_valid_host(host: str) -> bool:
+    """Return True when host is a valid hostname or IPv4 literal.
+
+    CONF_HOST is later string-formatted into ``https://{host}/`` (see
+    __init__.py), so anything carrying a scheme, path, whitespace, or other URL
+    metacharacters must be rejected here before it is ever accepted.
+
+    A bare IPv6 literal (e.g. ``::1``) would produce a malformed URL that breaks
+    http.client (IPv6 literals require bracketing). Raritan PDUs are
+    IPv4/hostname in practice, so IPv6 addresses are rejected outright rather
+    than silently carried into a broken URL.
+    """
+    host = host.strip()
+    if not host:
+        return False
+    try:
+        ipaddress.IPv4Address(host)
+    except ValueError:
+        pass
+    else:
+        return True
+    # Reject IPv6 literals explicitly so they don't fall through to the
+    # hostname regex (which would reject them anyway) and to make intent clear.
+    try:
+        ipaddress.IPv6Address(host)
+    except ValueError:
+        pass
+    else:
+        return False
+    return bool(_HOSTNAME_RE.match(host))
+
+
+def _resolve_ca_bundle(ca_bundle: str) -> str | None:
+    """Return the resolved realpath of a safe, readable CA bundle, else None.
+
+    Runs in an executor: resolves the real path, requires a certificate file
+    extension (.pem/.crt/.cer), and requires it to be a regular file. The
+    extension gate stops an arbitrary host path (e.g. ``/etc/passwd``) from
+    being opened and parsed as PEM by the TLS stack.
+
+    Returning the *resolved* path (rather than just True/False) lets callers
+    store and later load the exact path that was validated, closing the TOCTOU
+    window where a symlink could be swapped between validation and the TLS
+    stack's ``ssl.create_default_context(cafile=...)`` call.
+    """
+    resolved = os.path.realpath(ca_bundle)
+    if not resolved.lower().endswith(CA_BUNDLE_EXTENSIONS):
+        return None
+    if not os.path.isfile(resolved):
+        return None
+    return resolved
+
 
 USER_SCHEMA = vol.Schema(
     {
@@ -54,14 +120,30 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
 
     _discovered_host: str | None = None
 
-    async def _ca_bundle_missing(self, ca_bundle: str | None) -> bool:
-        """Return True when a CA bundle path is given but is not a readable file."""
+    async def _resolve_ca_bundle(self, ca_bundle: str | None) -> tuple[bool, str | None]:
+        """Validate a CA bundle path and return ``(ok, resolved_path)``.
+
+        ``ok`` is False only when a non-empty path is unusable: a path is
+        rejected unless it (a) carries a certificate file extension
+        (.pem/.crt/.cer) and (b) resolves to a readable regular file. The
+        extension gate stops an arbitrary host path (e.g. ``/etc/passwd``) from
+        being opened and parsed as PEM by the TLS stack.
+
+        On success ``resolved_path`` is the realpath actually validated; callers
+        store that (not the user's possibly-symlinked input) so the path loaded
+        by the TLS stack is the one that was checked.
+        """
         if not ca_bundle:
-            return False
-        return not await self.hass.async_add_executor_job(os.path.isfile, ca_bundle)
+            return True, None
+        resolved = await self.hass.async_add_executor_job(_resolve_ca_bundle, ca_bundle)
+        return resolved is not None, resolved
 
     async def async_step_dhcp(self, discovery_info: DhcpServiceInfo) -> ConfigFlowResult:
         """Handle a PDU discovered (or IP-changed) via DHCP."""
+        # The lease IP is later string-formatted into a URL; reject anything
+        # malformed rather than carry it into entry data.
+        if not _is_valid_host(discovery_info.ip):
+            return self.async_abort(reason="invalid_host")
         mac = dr.format_mac(discovery_info.macaddress)
         # If this hardware is already configured, update its host if the lease
         # changed (discovery-update-info) and abort, rather than prompt again.
@@ -89,9 +171,20 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            if await self._ca_bundle_missing(user_input.get(CONF_CA_BUNDLE)):
+            # Trim the host before validating/storing: it is later string-formatted
+            # into ``https://{host}/``, so stray surrounding whitespace would yield
+            # a malformed URL.
+            user_input = {**user_input, CONF_HOST: user_input[CONF_HOST].strip()}
+            ca_ok, resolved_ca = await self._resolve_ca_bundle(user_input.get(CONF_CA_BUNDLE))
+            if not _is_valid_host(user_input[CONF_HOST]):
+                errors["base"] = "invalid_host"
+            elif not ca_ok:
                 errors["base"] = "ca_bundle_not_found"
             else:
+                # Persist the resolved realpath so the TLS stack later loads the
+                # exact file that was validated (TOCTOU-safe).
+                if resolved_ca is not None:
+                    user_input = {**user_input, CONF_CA_BUNDLE: resolved_ca}
                 api = RaritanAPI(
                     host=user_input[CONF_HOST],
                     username=user_input[CONF_USERNAME],
@@ -134,7 +227,7 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+    async def async_step_reauth(self, _entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Initiated when ConfigEntryAuthFailed is raised at runtime."""
         return await self.async_step_reauth_confirm()
 
@@ -147,6 +240,17 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Merge with existing entry data so user can keep host but only re-enter creds
             merged = {**entry.data, **user_input}
+            # Re-validate host/ca_bundle on the merged data: the host is
+            # string-formatted into a URL and the CA bundle is loaded by the
+            # TLS stack, so both must be checked before any probe.
+            ca_ok, resolved_ca = await self._resolve_ca_bundle(merged.get(CONF_CA_BUNDLE))
+            if not _is_valid_host(merged[CONF_HOST]):
+                errors["base"] = "invalid_host"
+            elif not ca_ok:
+                errors["base"] = "ca_bundle_not_found"
+            elif resolved_ca is not None:
+                merged = {**merged, CONF_CA_BUNDLE: resolved_ca}
+        if user_input is not None and not errors:
             api = RaritanAPI(
                 host=merged[CONF_HOST],
                 username=merged[CONF_USERNAME],
@@ -193,9 +297,18 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
         if user_input is not None:
-            if await self._ca_bundle_missing(user_input.get(CONF_CA_BUNDLE)):
+            # Trim the host before validating/storing (see async_step_user): the
+            # value is string-formatted into a URL, so surrounding whitespace
+            # would produce a malformed one.
+            user_input = {**user_input, CONF_HOST: user_input[CONF_HOST].strip()}
+            ca_ok, resolved_ca = await self._resolve_ca_bundle(user_input.get(CONF_CA_BUNDLE))
+            if not _is_valid_host(user_input[CONF_HOST]):
+                errors["base"] = "invalid_host"
+            elif not ca_ok:
                 errors["base"] = "ca_bundle_not_found"
             else:
+                if resolved_ca is not None:
+                    user_input = {**user_input, CONF_CA_BUNDLE: resolved_ca}
                 api = RaritanAPI(
                     host=user_input[CONF_HOST],
                     username=user_input[CONF_USERNAME],
@@ -248,7 +361,10 @@ class RaritanPduConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class RaritanPduOptionsFlow(OptionsFlow):
+    """Options flow for the Raritan PDU integration (polling interval)."""
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show/handle the options form for the polling interval."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         current = self.config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
