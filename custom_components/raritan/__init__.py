@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+    Platform,
+)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -18,10 +24,6 @@ from homeassistant.helpers import entity_registry as er
 from .api import RaritanAPI, RaritanAPIError
 from .const import (
     CONF_CA_BUNDLE,
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_SCAN_INTERVAL,
-    CONF_USERNAME,
     CONF_VERIFY_TLS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -38,6 +40,8 @@ from .repairs import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from homeassistant.core import HomeAssistant, ServiceCall
 
 _LOGGER = logging.getLogger(__name__)
@@ -152,7 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
         for device in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
             for domain, ident in device.identifiers:
                 if domain == DOMAIN and ident.startswith(env_device_prefix):
-                    if ident[len(env_device_prefix) :] not in current:
+                    if ident.removeprefix(env_device_prefix) not in current:
                         device_reg.async_remove_device(device.id)
                     break
 
@@ -173,7 +177,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> 
     return unload_ok
 
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_migrate_entry(_hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entry."""
     _LOGGER.debug("Migrating entry %s from version %s", entry.entry_id, entry.version)
     if entry.version == 1:
@@ -193,6 +197,10 @@ async def _async_update_listener(hass: HomeAssistant, entry: RaritanConfigEntry)
 _OUTLET_UNIQUE_ID_RE = re.compile(r"_outlet_(\d+)_(switch|cycle)$")
 
 _INLET_UNIQUE_ID_RE = re.compile(r"_inlet_(\d+)_")
+
+_INLET_ENERGY_UID_RE = re.compile(r"_inlet_(\d+)_active_energy$")
+
+_OUTLET_ENERGY_UID_RE = re.compile(r"_outlet_(\d+)_active_energy$")
 
 
 def _migrate_inlet_idx_entity_ids(hass: HomeAssistant, *, entry_id: str) -> None:
@@ -239,30 +247,40 @@ def _resolve_entity_to_outlet(
     return entry, int(match.group(1))
 
 
+def _iter_outlet_entries(
+    hass: HomeAssistant, entity_ids: list[str]
+) -> Iterator[tuple[RaritanConfigEntry, int]]:
+    """Yield (config_entry, outlet_idx) for each outlet entity_id.
+
+    Shared by the outlet service handlers: resolves each entity to its outlet
+    and verifies the owning entry is loaded, raising the same translated
+    HomeAssistantError as before on the first failure.
+    """
+    for entity_id in entity_ids:
+        resolved = _resolve_entity_to_outlet(hass, entity_id)
+        if resolved is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="cannot_resolve_outlet",
+                translation_placeholders={"entity_id": entity_id},
+            )
+        entry, outlet_idx = resolved
+        if not hasattr(entry, "runtime_data"):
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="entry_not_loaded",
+                translation_placeholders={"entity_id": entity_id},
+            )
+        yield entry, outlet_idx
+
+
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register raritan services. Idempotent: only registers once."""
     if hass.services.has_service(DOMAIN, "cycle_outlet"):
         return
 
     async def _async_cycle_outlet(call: ServiceCall) -> None:
-        entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
-        for entity_id in entity_ids:
-            resolved = _resolve_entity_to_outlet(hass, entity_id)
-            if resolved is None:
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="cannot_resolve_outlet",
-                    translation_placeholders={"entity_id": entity_id},
-                )
-            entry, outlet_idx = resolved
-            if not hasattr(entry, "runtime_data"):
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="entry_not_loaded",
-                    translation_placeholders={"entity_id": entity_id},
-                )
+        for entry, outlet_idx in _iter_outlet_entries(hass, call.data.get("entity_id", [])):
             try:
                 await entry.runtime_data.coordinator.async_cycle_outlet(idx=outlet_idx)
             except RaritanAPIError as exc:
@@ -274,24 +292,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _async_set_outlet_state(call: ServiceCall) -> None:
         on = bool(call.data["state"])
-        entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
-        for entity_id in entity_ids:
-            resolved = _resolve_entity_to_outlet(hass, entity_id)
-            if resolved is None:
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="cannot_resolve_outlet",
-                    translation_placeholders={"entity_id": entity_id},
-                )
-            entry, outlet_idx = resolved
-            if not hasattr(entry, "runtime_data"):
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="entry_not_loaded",
-                    translation_placeholders={"entity_id": entity_id},
-                )
+        for entry, outlet_idx in _iter_outlet_entries(hass, call.data.get("entity_id", [])):
             try:
                 await entry.runtime_data.coordinator.async_set_outlet_state(idx=outlet_idx, on=on)
             except RaritanAPIError as exc:
@@ -303,8 +304,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _async_reset_energy_counter(call: ServiceCall) -> None:
         entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
         for entity_id in entity_ids:
             registry = er.async_get(hass)
             entity = registry.async_get(entity_id)
@@ -315,8 +314,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
                     translation_placeholders={"entity_id": entity_id},
                 )
             uid = entity.unique_id or ""
-            inlet_match = re.search(r"_inlet_(\d+)_active_energy$", uid)
-            outlet_match = re.search(r"_outlet_(\d+)_active_energy$", uid)
+            inlet_match = _INLET_ENERGY_UID_RE.search(uid)
+            outlet_match = _OUTLET_ENERGY_UID_RE.search(uid)
             if inlet_match is not None:
                 kind = "inlet"
                 idx = int(inlet_match.group(1))
