@@ -1554,6 +1554,72 @@ def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI, fake_bulk: Ma
     assert second == first
 
 
+def test_refresh_env_sensors_preserves_on_bulk_transport_failure(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """A transport failure in the slot/spec BULK (not just the manager call) must
+    preserve the prior set, like the manager-level failure already does.
+
+    Regression: the two perform_bulk() calls sat outside the walk's try/except,
+    so a transport HttpException escaped _walk_env_sensors entirely -> on a tick
+    it would abort the whole telemetry update instead of degrading to empty.
+    """
+    from raritan.rpc import HttpException
+
+    pdu = _pdu_with_peripherals(
+        [_make_peripheral_slot(_make_peripheral_device(serial="DEV9", numeric=(8, 7, 21.0)))]
+    )
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        first = api.refresh_env_sensors()
+        assert "DEV9:n0" in first
+
+        # Now make the BULK itself raise a transport error on the next walk.
+        def _raising_factory(_agent: object) -> MagicMock:
+            inst = MagicMock()
+            inst.perform_bulk.side_effect = HttpException("bulk transport failed")
+            return inst
+
+        fake_bulk.side_effect = _raising_factory
+        second = api.refresh_env_sensors()
+    assert second == first
+
+
+def test_walk_env_sensors_returns_none_when_spec_bulk_fails(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """Device bulk succeeds but the TypeSpec bulk fails (transport) -> couldn't
+    ask, so the walk returns None instead of escaping and aborting the tick.
+    """
+    from raritan.rpc import HttpException
+
+    pdu = _pdu_with_peripherals(
+        [_make_peripheral_slot(_make_peripheral_device(serial="DEV1", numeric=(8, 7, 20.0)))]
+    )
+    base_factory = fake_bulk.side_effect
+    calls = {"n": 0}
+
+    def factory(agent: object) -> MagicMock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return base_factory(agent)  # device bulk: succeeds normally
+        inst = MagicMock()  # spec bulk: transport failure
+        inst.perform_bulk.side_effect = HttpException("spec bulk failed")
+        return inst
+
+    fake_bulk.side_effect = factory
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        result = api.refresh_env_sensors()  # must not raise
+    assert result == ()  # no prior set; couldn't ask -> stays empty
+
+
 def test_walk_env_sensors_batches_slot_reads(api: RaritanAPI) -> None:
     """Peripheral discovery must batch slot reads into a bounded number of bulk
     roundtrips, not one synchronous RPC per slot. Each roundtrip costs a TLS
