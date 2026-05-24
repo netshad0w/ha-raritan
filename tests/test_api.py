@@ -989,6 +989,44 @@ def test_fetch_alerts_degrades_label_on_failed_sub_request(
     assert fake_bulk.call_count == 1
 
 
+def test_fetch_alerts_keeps_labels_aligned_when_a_sensor_lacks_getter(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """A sensor exposing no getMetaData must not shift the bulk-result indices of
+    the sensors that follow it.
+
+    Regression: the per-row index stored ``len(md_index)`` (which counts the
+    ``None`` placeholder rows) instead of the count of actually-queued requests,
+    so any no-getter sensor preceding a real one mislabeled every later sensor.
+    The bulk SUCCEEDS here, so the only thing under test is index alignment.
+    """
+    no_getter = _make_sensor_data(
+        sensor_target="/model/pdu/0/inlet/0/sensors/nogetter",
+        sensor_label="ignored",
+    )
+    no_getter.sensor.getMetaData = None  # no metadata getter -> fallback "?"
+    g1 = _make_sensor_data(
+        sensor_target="/model/pdu/0/inlet/0/sensors/g1",
+        sensor_label="Sensor One",
+    )
+    g2 = _make_sensor_data(
+        sensor_target="/model/pdu/0/inlet/0/sensors/g2",
+        sensor_label="Sensor Two",
+    )
+    pdu = MagicMock()
+    mgr = MagicMock()
+    mgr.getAlertedSensors.return_value = [no_getter, g1, g2]
+    pdu.getAlertedSensorManager.return_value = mgr
+    cap = _basic_cap()
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        snapshots = api.fetch_alerts(cap)
+    assert [s.sensor_label for s in snapshots] == ["?", "Sensor One", "Sensor Two"]
+
+
 def test_fetch_alerts_degrades_all_labels_on_bulk_failure(api: RaritanAPI) -> None:
     """A whole-bulk transport failure keeps every alert's fallback label rather
     than breaking the tick. Also covers a sensor that exposes no getMetaData."""
