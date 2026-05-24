@@ -390,7 +390,14 @@ class RaritanAPI:
         device_helper = BulkRequestHelper(self._agent)
         for slot in slots:
             device_helper.add_request(slot.getDevice)
-        devices = device_helper.perform_bulk()
+        try:
+            devices = device_helper.perform_bulk()
+        except (HttpException, JsonRpcErrorException) as exc:
+            # A whole-bulk transport failure means we couldn't ask: return None
+            # (not []) so a first-tick walk degrades to empty and a rescan keeps
+            # the prior set, rather than escaping and aborting the telemetry tick.
+            _LOGGER.debug("Peripheral slot bulk failed on %s: %s", self._host, str(exc)[:200])
+            return None
 
         # peripheral.Device is a ValueObject ['deviceID', 'position',
         # 'packageClass', 'device'] where `device` is a single Sensor proxy
@@ -415,7 +422,9 @@ class RaritanAPI:
                     if hasattr(device, "deviceID")
                     else ""
                 )
-            except Exception:
+            except Exception as exc:
+                # deviceID shape is SDK-dependent; fall back to a slot-derived id.
+                _LOGGER.debug("Peripheral serial unreadable on slot %d: %s", slot_idx, exc)
                 serial = ""
             base_id = serial or f"slot_{slot_idx}"
             label = serial or f"Peripheral {slot_idx}"
@@ -427,7 +436,12 @@ class RaritanAPI:
             spec_helper = BulkRequestHelper(self._agent)
             for _base_id, _label, sensor_proxy, _is_state in pending:
                 spec_helper.add_request(sensor_proxy.getTypeSpec)
-            specs = spec_helper.perform_bulk()
+            try:
+                specs = spec_helper.perform_bulk()
+            except (HttpException, JsonRpcErrorException) as exc:
+                # Couldn't classify -> couldn't ask (see device bulk above).
+                _LOGGER.debug("Peripheral spec bulk failed on %s: %s", self._host, str(exc)[:200])
+                return None
 
         env_sensors: list[_EnvSensor] = []
         for (base_id, label, sensor_proxy, is_state), spec in zip(pending, specs, strict=True):
@@ -461,7 +475,9 @@ class RaritanAPI:
             stype = _READING_TYPE_NAMES.get(rt, "UNKNOWN") if rt is not None else "UNKNOWN"
             unit = _UNIT_NAMES.get(unit_int) if unit_int is not None else None
             return (stype, unit)
-        except Exception:
+        except Exception as exc:
+            # TypeSpec enum shape is SDK-dependent; degrade to UNKNOWN.
+            _LOGGER.debug("Unrecognized TypeSpec, classifying as UNKNOWN: %s", exc)
             return ("UNKNOWN", None)
 
     def _refresh_proxies(self, cap: CapabilityMatrix) -> None:
