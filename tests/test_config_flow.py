@@ -312,6 +312,29 @@ async def test_user_step_ca_bundle_not_found(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "ca_bundle_not_found"}
 
 
+async def test_user_step_ca_bundle_rejects_null_byte_path(hass: HomeAssistant) -> None:
+    """A CA bundle path containing a NUL byte must be rejected as not-found, not crash.
+
+    os.path.realpath raises ValueError on embedded NUL bytes; without a guard
+    that escapes the executor job and surfaces as an internal error in the flow.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "10.0.0.1",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+            CONF_CA_BUNDLE: "/tmp/ca\x00.pem",
+        },
+    )
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
+    assert result["errors"] == {"base": "ca_bundle_not_found"}
+
+
 async def test_user_step_ca_bundle_rejects_non_cert_extension(
     hass: HomeAssistant, tmp_path
 ) -> None:
