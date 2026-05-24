@@ -65,6 +65,44 @@ async def test_diagnostics_redacts_sensitive_fields(
     assert dump["capabilities"]["hw_revision"] == "**REDACTED**"
 
 
+async def test_diagnostics_redacts_alert_sensor_id(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """The per-alert sensor_id is an internal RID that can embed a peripheral
+    serial, so it is redacted like every other hardware identifier (default-deny).
+    """
+    from custom_components.raritan.models import AlertSnapshot
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_HOST: "10.0.0.1",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_VERIFY_TLS: True,
+        },
+    )
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    entry.runtime_data.coordinator._previous_alerts = [
+        AlertSnapshot(
+            sensor_label="Temperature",
+            parent_label="Peripheral 1",
+            alert_state="CRITICAL",
+            sensor_id="/model/peripheraldevicemanager/PERIPHSERIAL42/sensors/temp",
+        )
+    ]
+    dump = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert "PERIPHSERIAL42" not in str(dump)
+    assert dump["last_5_alerts"][0]["sensor_id"] == "**REDACTED**"
+    # The human-readable labels stay (they carry no hardware identity).
+    assert dump["last_5_alerts"][0]["sensor_label"] == "Temperature"
+
+
 async def test_diagnostics_includes_entity_breakdown_and_counts(
     hass: HomeAssistant, mock_raritan: MagicMock
 ) -> None:

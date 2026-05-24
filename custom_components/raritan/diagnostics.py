@@ -45,6 +45,9 @@ REDACTED_KEYS = {
     # Attached SmartSensor/SmartLock peripheral IDs embed the peripheral's own
     # serial, a unique hardware identifier, so redact them like the PDU serial.
     "env_sensor_ids",
+    # Per-alert sensor RID: a peripheral alert's target can embed the peripheral
+    # serial, so redact it too. The human-readable sensor_label/parent_label stay.
+    "sensor_id",
 }
 
 
