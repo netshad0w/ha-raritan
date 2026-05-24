@@ -976,12 +976,16 @@ class RaritanAPI:
         # sensor that exposes one.
         helper = BulkRequestHelper(self._agent)
         md_index: list[int | None] = []  # row -> index into bulk results, or None
+        queued = 0  # count of requests actually enqueued (skips None rows)
         for sd in rows:
             sensor = getattr(sd, "sensor", None)
             getter = getattr(sensor, "getMetaData", None) if sensor is not None else None
             if getter is not None:
                 helper.add_request(getter)
-                md_index.append(len(md_index))
+                # Index into the bulk RESULTS, which only hold queued requests;
+                # len(md_index) would also count the None rows and shift labels.
+                md_index.append(queued)
+                queued += 1
             else:
                 md_index.append(None)
         try:
