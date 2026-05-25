@@ -1,7 +1,6 @@
 {
   "domain": "raritan",
   "name": "Raritan PDU",
-  "version": "1.0.0",
   "codeowners": ["@netshad0w"],
   "config_flow": true,
   "dhcp": [
@@ -9,9 +8,10 @@
     { "registered_devices": true }
   ],
   "documentation": "https://github.com/netshad0w/ha-raritan",
-  "issue_tracker": "https://github.com/netshad0w/ha-raritan/issues",
-  "iot_class": "local_polling",
   "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/netshad0w/ha-raritan/issues",
   "loggers": ["raritan", "custom_components.raritan"],
-  "requirements": ["raritan>=4.3.13.52458"]
+  "requirements": ["raritan>=4.3.13.52458"],
+  "version": "1.0.0"
 }
