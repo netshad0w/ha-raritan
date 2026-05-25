@@ -4,7 +4,7 @@ raritan==4.3.13.52458
 # matchers pull in. Bundled in real HA installs; pinned here so the dev
 # container / venv can load it and exercise DHCP discovery (versions match
 # homeassistant 2026.3.2's dhcp manifest).
-aiodhcpwatcher==1.2.1
+aiodhcpwatcher==1.2.7
 aiodiscover==2.7.1
 cached-ipaddress==1.0.1
 pytest==9.0.0
