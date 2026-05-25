@@ -74,3 +74,7 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Brand images live in the home-assistant/brands repo, which a new
+          # custom integration has not been added to yet. Drop this once the
+          # brand PR is merged so the check validates the icons too.
+          ignore: brands
