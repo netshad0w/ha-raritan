@@ -470,6 +470,7 @@ async def test_async_set_outlet_state_holds_lock_while_calling_api(
     await coord.async_set_outlet_state(idx=5, on=True)
     api.set_outlet_state.assert_called_once_with(idx=5, on=True)
     assert seen_locked == [True], "Write must run with coordinator._lock held"
+    await coord.async_shutdown()
 
 
 async def test_async_cycle_outlet_holds_lock_while_calling_api(
@@ -489,6 +490,7 @@ async def test_async_cycle_outlet_holds_lock_while_calling_api(
     await coord.async_cycle_outlet(idx=3)
     api.cycle_outlet.assert_called_once_with(idx=3)
     assert seen_locked == [True]
+    await coord.async_shutdown()
 
 
 async def test_async_reset_inlet_energy_holds_lock(
@@ -508,6 +510,7 @@ async def test_async_reset_inlet_energy_holds_lock(
     await coord.async_reset_inlet_energy(idx=1)
     api.reset_inlet_energy.assert_called_once_with(idx=1)
     assert seen_locked == [True]
+    await coord.async_shutdown()
 
 
 async def test_async_reset_outlet_energy_holds_lock(
@@ -527,6 +530,7 @@ async def test_async_reset_outlet_energy_holds_lock(
     await coord.async_reset_outlet_energy(idx=2)
     api.reset_outlet_energy.assert_called_once_with(idx=2)
     assert seen_locked == [True]
+    await coord.async_shutdown()
 
 
 async def test_async_set_outlet_state_blocks_when_lock_held(
@@ -553,6 +557,7 @@ async def test_async_set_outlet_state_blocks_when_lock_held(
     coord._lock.release()
     await write_task
     api.set_outlet_state.assert_called_once_with(idx=1, on=True)
+    await coord.async_shutdown()
 
 
 # ---------------------------------------------------------------------------
