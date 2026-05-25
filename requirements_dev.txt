@@ -6,7 +6,7 @@ raritan==4.3.13.52458
 # homeassistant 2026.3.2's dhcp manifest).
 aiodhcpwatcher==1.2.1
 aiodiscover==2.7.1
-cached-ipaddress==1.0.1
+cached-ipaddress==1.1.1
 pytest==9.0.0
 pytest-asyncio==1.3.0
 pytest-cov==7.0.0
