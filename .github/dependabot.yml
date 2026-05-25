@@ -15,6 +15,13 @@ updates:
     schedule:
       interval: "weekly"
     ignore:
-      # homeassistant is pinned to the version declared in hacs.json; bumping it
-      # here would drift the two apart, so leave it to a deliberate manual bump.
+      # homeassistant and the libraries it pulls in (DHCP discovery stack,
+      # the test harness) must track the homeassistant pin in hacs.json, so
+      # leave them to a deliberate manual bump rather than per-package PRs.
       - dependency-name: "homeassistant"
+      - dependency-name: "aiodhcpwatcher"
+      - dependency-name: "aiodiscover"
+      - dependency-name: "cached-ipaddress"
+      - dependency-name: "pytest-homeassistant-custom-component"
+      - dependency-name: "pytest"
+      - dependency-name: "pytest-cov"
