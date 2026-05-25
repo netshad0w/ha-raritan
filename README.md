@@ -3,9 +3,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Custom Home Assistant integration for **Raritan intelligent rack PDUs** running Xerus firmware **4.0.10 or later**. Tested against PX3; supports PX2/PX3/PX4 hardware families.
+Custom Home Assistant integration for **Raritan intelligent rack PDUs** running Xerus firmware **4.0.10 or later** (4.0.10 is the enforced minimum; tested on 4.3.x). Supports the PX2/PX3/PX4 hardware families.
 
-Verified end-to-end on a **PX3-5487V-N2** (24 outlets, 201 entities, ~1.9 s average coordinator tick).
+Verified end-to-end on a **PX3-5487V-N2** (24 outlets, ~200 entities). A steady-state coordinator tick is a single HTTP round-trip.
 
 ## Features
 
@@ -23,13 +23,17 @@ Verified end-to-end on a **PX3-5487V-N2** (24 outlets, 201 entities, ~1.9 s aver
 - Per-OCP `binary_sensor` for trip state (`PROBLEM` device class).
 - Per-OCP current and peak-current `sensor` entities.
 
+### Controller & diagnostics
+- Per-controller-PSU health `binary_sensor` (`PROBLEM` device class, diagnostic): on when a power supply reports a fault.
+- **Refresh capabilities** diagnostic `button` on the PDU device: forces a re-probe and entry reload, for example after attaching a peripheral.
+
 ### Environment peripherals (Raritan SmartLock / SmartSensor)
-- Numeric: `TEMPERATURE`, `HUMIDITY`, `AIR_PRESSURE`, `AIR_FLOW`, `DEW_POINT` -> `sensor`.
-- State: `CONTACT_CLOSURE`, `ON_OFF`, `WATER_LEAK`, `SMOKE`, `MOTION`, `TAMPER` -> `binary_sensor`.
+- Numeric (temperature, humidity, air pressure, air flow, dew point) -> `sensor`, with the unit and device class mapped from the peripheral type.
+- State (contact closure, dry contact, on/off, water leak, smoke, motion, tamper, trip) -> `binary_sensor`, with the device class mapped from the peripheral type.
 
 ### Events
-- Threshold/alert events via `AlertedSensorManager` polling, surfaced as `event.<serial>_alert` and `raritan_alert` bus events (requires PDU role permission **View Local Event Log**).
-- Outlet state-change events via local diff, surfaced as `event.<outlet>_state_change` and `raritan_outlet_state_changed`.
+- Threshold/alert events via `AlertedSensorManager` polling, exposed as `event` entities plus a `raritan_alert` bus event (requires PDU role permission **View Local Event Log**).
+- Outlet state-change events via local diff, exposed as `event` entities plus a `raritan_outlet_state_changed` bus event.
 
 ### Services
 - `cycle_outlet`: power-cycle a single outlet.
@@ -70,7 +74,7 @@ Read-only telemetry works with just **Unrestricted View Privileges**; the rest i
 
 ### HACS (recommended, while pending default-repo submission)
 
-1. **HACS -> Integrations -> ⋮ -> Custom repositories**
+1. **HACS -> three-dot menu -> Custom repositories**
 2. Add `https://github.com/netshad0w/ha-raritan` as type **Integration**.
 3. Install **Raritan PDU**, restart Home Assistant.
 4. **Settings -> Devices & Services -> Add Integration -> "Raritan PDU"**.
@@ -150,14 +154,14 @@ automation:
 - **`raritan_alert` never fires**: the role is missing the **View Local Event Log** permission. The alert poll degrades gracefully but emits a debug-level log line each tick.
 - **`switch.turn_on` returns 401**: the role is missing **Switch Outlet**.
 - **Re-auth banner after a password change**: expected. Click the banner, supply the new password; HA verifies the PDU's serial number matches before saving.
-- **High CPU / slow ticks (>3 s)**: confirm PDU firmware ≥ 4.0.10. Older firmware lacks `BulkRequestHelper` and falls back to per-sensor RPCs (~50 s on a 24-outlet PDU).
+- **Slow ticks (>3 s)**: check the network path to the PDU. The PDU closes the TLS keep-alive between requests, so every RPC pays a fresh handshake and a slow or lossy link multiplies per-tick latency.
 - **Entity IDs look redundant** (`switch.outlet_1_outlet_1`): fixed cosmetically post-creation; existing entity IDs are preserved by HA. Delete and re-add the integration to regenerate clean IDs.
 
 ## Compatibility
 
 Tested firmware family: **Xerus 4.3.x**. The Raritan SDK pin in `manifest.json` (`raritan>=4.3.13.52458`) controls the wire-protocol baseline. Older firmware (down to 4.0.10) is expected to work for read paths; newer firmware (4.4+/5.x) will load but is unverified.
 
-mDNS / zeroconf discovery is **not supported**. PX3 firmware 4.3.x does not advertise via Bonjour, so manual configuration is the only entry path.
+The PDU is discovered automatically over **DHCP** (Raritan MAC prefix `00:0D:5D`): Home Assistant raises a discovery notification you can click to add it, and it updates the stored host if the lease IP changes. mDNS / zeroconf is not used (PX3 firmware 4.3.x does not advertise via Bonjour). Manual configuration (above) also works.
 
 ## Not yet supported
 
