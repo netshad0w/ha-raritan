@@ -5,7 +5,7 @@ raritan==4.3.13.52458
 # container / venv can load it and exercise DHCP discovery (versions match
 # homeassistant 2026.3.2's dhcp manifest).
 aiodhcpwatcher==1.2.1
-aiodiscover==2.7.1
+aiodiscover==3.2.3
 cached-ipaddress==1.0.1
 pytest==9.0.0
 pytest-asyncio==1.3.0
