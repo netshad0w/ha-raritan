@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -116,17 +117,53 @@ async def test_coordinator_env_rescan_failure_is_non_fatal(
     capability: CapabilityMatrix,
     fake_payload: CoordinatorPayload,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A failing env rescan must not break the telemetry tick."""
+    """An unexpected rescan error must not break the tick, and is logged with a
+    traceback at ERROR level (not the quiet debug path) so it surfaces."""
     monkeypatch.setattr("custom_components.raritan.coordinator.ENV_RESCAN_EVERY", 1)
     api = _make_api(fake_payload)
     api.refresh_env_sensors.side_effect = RuntimeError("boom")
     coord = RaritanDataUpdateCoordinator(
         hass=hass, api=api, capabilities=capability, scan_interval=5
     )
-    await coord.async_refresh()
-    await hass.async_block_till_done()
+    with caplog.at_level(logging.DEBUG, logger="custom_components.raritan.coordinator"):
+        await coord.async_refresh()
+        await hass.async_block_till_done()
     assert coord.data is fake_payload
+    assert any(
+        r.levelno == logging.ERROR and "Unexpected error during env peripheral rescan" in r.message
+        for r in caplog.records
+    )
+    await coord.async_shutdown()
+
+
+async def test_coordinator_env_rescan_transport_error_is_non_fatal(
+    hass: HomeAssistant,
+    capability: CapabilityMatrix,
+    fake_payload: CoordinatorPayload,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An expected transport error during rescan takes the quiet debug path (not
+    the ERROR/traceback path) and the tick still produces a payload."""
+    monkeypatch.setattr("custom_components.raritan.coordinator.ENV_RESCAN_EVERY", 1)
+    api = _make_api(fake_payload)
+    api.refresh_env_sensors.side_effect = RaritanConnectionError("unreachable")
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, api=api, capabilities=capability, scan_interval=5
+    )
+    with caplog.at_level(logging.DEBUG, logger="custom_components.raritan.coordinator"):
+        await coord.async_refresh()
+        await hass.async_block_till_done()
+    assert coord.data is fake_payload
+    assert any(
+        r.levelno == logging.DEBUG and "Env peripheral rescan failed (non-fatal)" in r.message
+        for r in caplog.records
+    )
+    assert not any(
+        "Unexpected error during env peripheral rescan" in r.message for r in caplog.records
+    )
     await coord.async_shutdown()
 
 
