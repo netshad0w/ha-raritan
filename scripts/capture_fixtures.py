@@ -1,18 +1,27 @@
 """Capture anonymized JSON-RPC responses from a real Raritan PDU.
 
 Usage:
-    python scripts/capture_fixtures.py --host 10.20.0.42 --user admin --pass secret \
+    python scripts/capture_fixtures.py --host 10.20.0.42 --user admin \
         --output tests/fixtures/4.3.11
+
+The password is taken from the RARITAN_PASSWORD environment variable if set,
+otherwise it is prompted for interactively. It is never accepted on the command
+line, which would expose it in the process list on a shared host.
 
 The script hits a live PDU, reads metadata + inlet/outlet/OCP/env sensors,
 anonymizes serial numbers, IPs, MAC addresses, hostnames and writes the result
 as JSON files for use as pytest fixtures.
+
+TLS certificate verification is on by default. Pass --no-verify-tls to disable
+it (for example, against a PDU with a self-signed certificate).
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -49,10 +58,10 @@ def anonymize(value: Any, real_host: str) -> Any:
 # Capture ---------------------------------------------------------------------
 
 
-def capture(host: str, user: str, password: str, output: Path) -> None:
+def capture(host: str, user: str, password: str, output: Path, no_verify_tls: bool) -> None:
     from raritan.rpc import Agent, pdumodel  # type: ignore[import-not-found]
 
-    agent = Agent(host, user, password, disable_certificate_verification=True)
+    agent = Agent(host, user, password, disable_certificate_verification=no_verify_tls)
     pdu = pdumodel.Pdu("/model/pdu/0", agent)
 
     output.mkdir(parents=True, exist_ok=True)
@@ -104,10 +113,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Capture anonymized PDU fixtures.")
     parser.add_argument("--host", required=True)
     parser.add_argument("--user", required=True)
-    parser.add_argument("--pass", dest="password", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--no-verify-tls",
+        action="store_true",
+        default=False,
+        help="Disable TLS certificate verification (default: verification enabled).",
+    )
     args = parser.parse_args()
-    capture(args.host, args.user, args.password, args.output)
+    password = os.environ.get("RARITAN_PASSWORD") or getpass.getpass(f"Password for {args.user}: ")
+    if not password:
+        print("ERROR: no password provided.", file=sys.stderr)
+        return 2
+    if args.no_verify_tls:
+        print("WARNING: TLS certificate verification is disabled.", file=sys.stderr)
+    capture(args.host, args.user, password, args.output, args.no_verify_tls)
     return 0
 
 
