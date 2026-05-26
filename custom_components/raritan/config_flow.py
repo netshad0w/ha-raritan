@@ -96,7 +96,7 @@ def _resolve_ca_bundle(ca_bundle: str) -> str | None:
     """
     try:
         resolved = os.path.realpath(ca_bundle)
-    except (ValueError, OSError):
+    except ValueError, OSError:
         # ValueError: embedded NUL byte in the path; OSError: unresolvable path.
         # Either way the path is unusable -> treat as not found rather than let
         # it escape the executor job as an internal error in the config flow.

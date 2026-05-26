@@ -374,9 +374,11 @@ class RaritanAPI:
         try:
             mgr = pdu.getPeripheralDeviceManager()
             slots = list(mgr.getDeviceSlots())
-        except (HttpException, AttributeError):
-            return None
         except Exception as exc:
+            # Peripheral discovery is best-effort and must never break a tick, so
+            # this stays a broad catch (transport error, missing manager, or an
+            # SDK shape change all degrade to "couldn't ask" -> return None). One
+            # clause, always logged at debug, so nothing is swallowed silently.
             _LOGGER.debug("Peripheral discovery unavailable on %s: %s", self._host, str(exc)[:200])
             return None
 
@@ -404,6 +406,7 @@ class RaritanAPI:
         # (never a list). Classify numeric vs state by which read method it
         # exposes (NumericSensor.getReading vs StateSensor.getState).
         pending: list[tuple[str, str, Any, bool]] = []  # (base_id, label, proxy, is_state)
+        seen_base_ids: set[str] = set()
         for slot_idx, device in enumerate(devices):
             if isinstance(device, Exception) or device is None:
                 continue
@@ -428,6 +431,18 @@ class RaritanAPI:
                 serial = ""
             base_id = serial or f"slot_{slot_idx}"
             label = serial or f"Peripheral {slot_idx}"
+            # Two peripherals can report the same serial (cloned hardware, or an
+            # empty serial on both): a shared base_id would make one env sensor
+            # shadow the other in env_by_id. Fall back to the slot-derived id,
+            # suffixing until it is genuinely unique so even a real serial that
+            # happens to equal our "slot_N" fallback can't collide either.
+            if base_id in seen_base_ids:
+                base_id = f"slot_{slot_idx}"
+                suffix = 0
+                while base_id in seen_base_ids:
+                    suffix += 1
+                    base_id = f"slot_{slot_idx}_{suffix}"
+            seen_base_ids.add(base_id)
             pending.append((base_id, label, sensor_proxy, is_state))
 
         # Second bulk roundtrip: classify every sensor's TypeSpec at once.
@@ -583,7 +598,10 @@ class RaritanAPI:
             try:
                 pdu_sensors = pdu.getSensors()
                 self._psu_state_sensors = list(getattr(pdu_sensors, "powerSupplyStatus", []) or [])
-            except Exception:
+            except Exception as exc:
+                # Best-effort: SKUs/firmware without PSU state sensors raise here.
+                # Log at debug so a genuine SDK-shape change is still observable.
+                _LOGGER.debug("PSU state sensors unavailable on %s: %s", self._host, str(exc)[:200])
                 self._psu_state_sensors = []
 
     def fetch_telemetry(self, cap: CapabilityMatrix) -> CoordinatorPayload:
@@ -693,7 +711,7 @@ class RaritanAPI:
             # on PDUs that expose internal power-supply state sensors (rare, mostly
             # large i7/4-pole models); the test PDU has none.
             psu_request_layout: list[bool] = []
-            for psu in psu_sensors:  # pragma: no cover
+            for psu in psu_sensors:
                 method = getattr(psu, "getState", None)
                 if method is not None:
                     helper.add_request(method)
@@ -851,7 +869,7 @@ class RaritanAPI:
             # Raritan firmware uses value=0 for normal/OK; any non-zero or
             # available=False is treated as a problem or unknown.
             psus: list[PsuReading] = []
-            for psu_idx, present in enumerate(psu_request_layout, start=1):  # pragma: no cover
+            for psu_idx, present in enumerate(psu_request_layout, start=1):
                 if not present:
                     psus.append(PsuReading(idx=psu_idx, ok=None))
                     continue
@@ -1006,7 +1024,7 @@ class RaritanAPI:
                 md_index.append(None)
         try:
             md_results = helper.perform_bulk() if any(i is not None for i in md_index) else []
-        except (HttpException, JsonRpcErrorException):
+        except HttpException, JsonRpcErrorException:
             # A whole-bulk transport failure must not break the tick: every
             # alert keeps its fallback label.
             md_results = []
