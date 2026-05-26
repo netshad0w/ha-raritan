@@ -1024,9 +1024,11 @@ class RaritanAPI:
                 md_index.append(None)
         try:
             md_results = helper.perform_bulk() if any(i is not None for i in md_index) else []
-        except HttpException, JsonRpcErrorException:
+        except (HttpException, JsonRpcErrorException) as exc:
             # A whole-bulk transport failure must not break the tick: every
-            # alert keeps its fallback label.
+            # alert keeps its fallback label. Log at debug so a persistent
+            # failure (revoked permission, firmware regression) is observable.
+            _LOGGER.debug("Alert metadata bulk failed on %s: %s", self._host, str(exc)[:200])
             md_results = []
 
         snapshots: list[AlertSnapshot] = []
