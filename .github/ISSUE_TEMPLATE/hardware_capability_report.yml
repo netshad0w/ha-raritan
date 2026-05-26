@@ -10,7 +10,7 @@ body:
         variants, dual-feed SKUs, or anything with OCPs / env peripherals
         attached). Run `scripts/capture_fixtures.py` first and paste the
         anonymized output below. See the "Help cover more PDU models" section
-        of the README for the capture steps.
+        of docs/contributing.md for the capture steps.
   - type: input
     id: pdu_model
     attributes:
