@@ -1,0 +1,54 @@
+name: Hardware capability report
+description: Report a Raritan PDU model not yet covered by the tests, with anonymized capture output.
+title: "[HW]: "
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Use this form for a Raritan model not yet covered (PX2, PX4, PXC, ATS
+        variants, dual-feed SKUs, or anything with OCPs / env peripherals
+        attached). Run `scripts/capture_fixtures.py` first and paste the
+        anonymized output below. See the "Help cover more PDU models" section
+        of the README for the capture steps.
+  - type: input
+    id: pdu_model
+    attributes:
+      label: PDU model
+      description: The Raritan model, for example PX3-5260R or PX4-5747.
+      placeholder: PX3-5260R
+    validations:
+      required: true
+  - type: input
+    id: firmware_version
+    attributes:
+      label: Firmware version
+      description: The PDU firmware version, for example 4.3.11.
+      placeholder: 4.3.11
+    validations:
+      required: true
+  - type: textarea
+    id: capability_json
+    attributes:
+      label: Anonymized capability / diagnostics JSON
+      description: >
+        Paste the anonymized JSON produced by the capture script (or the
+        diagnostics export). Diff and verify it before sharing: grep for any
+        value you consider sensitive (rack labels, internal hostnames in custom
+        fields) to catch anything the regex missed.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: observed_capabilities
+    attributes:
+      label: Observed vs missing capabilities
+      description: >
+        Confirm whether outlet switching / metering, OCPs, env peripherals,
+        multi-inlet, or transfer-switch behavior was observed, and note anything
+        that looked missing or wrong.
+      placeholder: |
+        Observed: outlet switching, outlet metering, multi-inlet (2 inlets)
+        Missing/unsupported: OCPs, env peripherals
+    validations:
+      required: true
