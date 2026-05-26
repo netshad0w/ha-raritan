@@ -191,6 +191,50 @@ def test_fetch_telemetry_invalid_reading_yields_none(
     assert payload.inlets[0].voltage is None
 
 
+def _make_psu_state(available: bool, value: int) -> MagicMock:
+    """Build a PSU StateSensor.State-like mock (available + numeric value)."""
+    state = MagicMock()
+    state.available = available
+    state.value = value
+    return state
+
+
+def test_fetch_telemetry_decodes_psu_states(api: RaritanAPI, mock_raritan: MagicMock) -> None:
+    """PSU health decodes to tri-state ok: value 0 = OK, non-zero = problem,
+    unavailable / errored / no getState() = unknown (None).
+
+    The test PX3 fixture has no PSU sensors, so this is the only place the
+    powerSupplyStatus request-layout and decode loops get exercised.
+    """
+    ok_psu = MagicMock()
+    ok_psu.getState.return_value = _make_psu_state(available=True, value=0)
+    bad_psu = MagicMock()
+    bad_psu.getState.return_value = _make_psu_state(available=True, value=2)
+    unavailable_psu = MagicMock()
+    unavailable_psu.getState.return_value = _make_psu_state(available=False, value=0)
+    errored_psu = MagicMock()
+    errored_psu.getState.side_effect = RuntimeError("rpc failed")
+    no_method_psu = object()  # lacks getState -> not queried, decodes to None
+
+    mock_raritan.getSensors.return_value.powerSupplyStatus = [
+        ok_psu,
+        bad_psu,
+        unavailable_psu,
+        errored_psu,
+        no_method_psu,
+    ]
+
+    cap = api.probe()
+    payload = api.fetch_telemetry(cap)
+
+    by_idx = payload.psus_by_idx
+    assert by_idx[1].ok is True  # value 0 -> healthy
+    assert by_idx[2].ok is False  # non-zero -> problem
+    assert by_idx[3].ok is None  # available=False -> unknown
+    assert by_idx[4].ok is None  # getState() raised -> unknown
+    assert by_idx[5].ok is None  # no getState() -> unknown
+
+
 def test_probe_raises_auth_error_on_403(fake_bulk: MagicMock) -> None:
     from raritan.rpc import HttpException  # type: ignore[import-not-found]
 
@@ -1552,6 +1596,50 @@ def test_refresh_env_sensors_preserves_on_failure(api: RaritanAPI, fake_bulk: Ma
     pdu.getPeripheralDeviceManager.side_effect = RuntimeError("transient")
     second = api.refresh_env_sensors()
     assert second == first
+
+
+def test_refresh_env_sensors_dedupes_duplicate_serials(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """Two peripherals reporting the same serial must not collide: the second
+    falls back to a slot-derived id so neither env sensor shadows the other."""
+    pdu = _pdu_with_peripherals(
+        [
+            _make_peripheral_slot(_make_peripheral_device(serial="DUP", numeric=(8, 7, 21.0))),
+            _make_peripheral_slot(_make_peripheral_device(serial="DUP", numeric=(8, 7, 22.0))),
+        ]
+    )
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        ids = api.refresh_env_sensors()
+    assert "DUP:n0" in ids  # first keeps the serial-derived id
+    assert "slot_1:n0" in ids  # second falls back to its slot index
+    assert len(ids) == 2
+
+
+def test_refresh_env_sensors_dedupes_when_serial_equals_slot_fallback(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """Even the pathological case where a real serial equals the slot-derived
+    fallback id ("slot_1") must not collide: the suffix loop makes it unique."""
+    pdu = _pdu_with_peripherals(
+        [
+            _make_peripheral_slot(_make_peripheral_device(serial="slot_1", numeric=(8, 7, 21.0))),
+            _make_peripheral_slot(_make_peripheral_device(serial="slot_1", numeric=(8, 7, 22.0))),
+        ]
+    )
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        ids = api.refresh_env_sensors()
+    assert "slot_1:n0" in ids  # first device keeps its (real) serial id
+    assert "slot_1_1:n0" in ids  # second's slot fallback collides, so it suffixes
+    assert len(ids) == 2
 
 
 def test_refresh_env_sensors_preserves_on_bulk_transport_failure(
