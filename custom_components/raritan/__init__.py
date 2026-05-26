@@ -30,6 +30,7 @@ from .const import (
     MIN_FIRMWARE_VERSION,
 )
 from .coordinator import RaritanDataUpdateCoordinator
+from .device_info import slug_sensor_id
 from .models import RaritanRuntimeData
 from .repairs import (
     cleanup_legacy_serial_keyed_issues,
@@ -151,7 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
         data = coordinator.data
         if data is None:
             return
-        current = {r.sensor_id.replace(":", "_").replace("/", "_") for r in data.env}
+        current = {slug_sensor_id(r.sensor_id) for r in data.env}
         device_reg = dr.async_get(hass)
         for device in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
             for domain, ident in device.identifiers:
