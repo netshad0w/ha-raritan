@@ -187,6 +187,14 @@ async def test_inlet_single_feed_attaches_to_pdu_device(
     ]
     assert inlet_devs == []
 
+    # Flat on the PDU device, so the entity name keeps the "Inlet 1" qualifier
+    # itself (otherwise it'd be a bare "Active power" on the shared PDU device).
+    fnames = {s.entity_id: s.attributes.get("friendly_name") for s in hass.states.async_all()}
+    assert (
+        fnames.get("sensor.raritan_px3_5487v_n2_test00000001_inlet_1_active_power")
+        == "Raritan PX3-5487V-N2 (TEST00000001) Inlet 1 active power"
+    )
+
 
 async def test_inlet_multi_feed_creates_sub_device_per_inlet(
     hass: HomeAssistant, mock_raritan: MagicMock
@@ -242,9 +250,10 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
         for e in er_reg.entities.values()
         if e.platform == DOMAIN and "_inlet_" in (e.unique_id or "")
     ]
-    # 2 inlets * 7 inlet sensors = 14 entities expected.
-    assert len(inlet_entities) >= 14, (
-        f"expected >=14 inlet entities, got {len(inlet_entities)}: "
+    # 2 inlets * 7 inlet sensors = 14 entities, exactly (a phantom inlet or a
+    # unique_id collision would leak extras, so pin the count).
+    assert len(inlet_entities) == 14, (
+        f"expected 14 inlet entities, got {len(inlet_entities)}: "
         f"{[(e.entity_id, e.unique_id) for e in inlet_entities]}"
     )
 
@@ -256,11 +265,17 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
         if d.via_device_id == pdu_dev.id and any("_inlet_" in i for _, i in d.identifiers)
     ]
     assert len(inlet_devs) == 2
-    from custom_components.raritan.device_info import pdu_device_name
-
-    prefix = pdu_device_name(entry.runtime_data.capabilities)
+    # Bare names; the PDU is carried by via_device + serial_number, not a prefix.
     inlet_names = sorted(d.name or "" for d in inlet_devs)
-    assert inlet_names == [f"{prefix} Inlet 1", f"{prefix} Inlet 2"]
+    assert inlet_names == ["Inlet 1", "Inlet 2"]
+    assert all(d.serial_number == "TEST00000001" for d in inlet_devs)
+
+    # The "Inlet N" sub-device carries the qualifier, so the entity name is bare
+    # and HA composes "Inlet 2 Active power" -- never the doubled
+    # "Inlet 2 Inlet 2 active power".
+    fnames = {s.entity_id: s.attributes.get("friendly_name") for s in hass.states.async_all()}
+    assert fnames.get("sensor.inlet_2_active_power") == "Inlet 2 Active power"
+    assert fnames.get("sensor.inlet_1_active_power") == "Inlet 1 Active power"
 
 
 async def test_outlet_sensors_have_sub_device_hierarchy(
@@ -287,13 +302,11 @@ async def test_outlet_sensors_have_sub_device_hierarchy(
     pdu_dev = next(d for d in devreg.devices.values() if (DOMAIN, "TEST00000001") in d.identifiers)
     outlet_devs = [d for d in devreg.devices.values() if d.via_device_id == pdu_dev.id]
     assert len(outlet_devs) == 2
-    # Names are PDU-qualified so two PDUs never expose a bare "Outlet 24".
-    from custom_components.raritan.device_info import pdu_device_name
-
-    entry = hass.config_entries.async_entries(DOMAIN)[0]
-    prefix = pdu_device_name(entry.runtime_data.capabilities)
+    # Bare names ("Outlet 1") so entities read "Outlet 1 Active power" rather
+    # than repeating the PDU model+serial; serial_number disambiguates PDUs.
     outlet_names = sorted(d.name for d in outlet_devs)
-    assert outlet_names == [f"{prefix} Outlet 1", f"{prefix} Outlet 2"]
+    assert outlet_names == ["Outlet 1", "Outlet 2"]
+    assert all(d.serial_number == "TEST00000001" for d in outlet_devs)
 
 
 async def test_ocp_current_sensors_created(hass: HomeAssistant, mock_raritan: MagicMock) -> None:

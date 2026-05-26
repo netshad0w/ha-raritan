@@ -318,12 +318,22 @@ class RaritanInletSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sens
         self._inlet_idx = inlet_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_inlet_{inlet_idx}_{description.key}"
-        self._attr_translation_placeholders = {"idx": str(inlet_idx)}
-        # HA derives the auto-generated entity_id slug from the translation
-        # template BEFORE resolving placeholders, so "Inlet {idx} voltage"
-        # becomes "..._inlet_idx_voltage" (literal "idx"). Explicitly
-        # pre-resolve the slug so the entity_id reads as "..._inlet_1_voltage".
-        self._attr_suggested_object_id = f"inlet_{inlet_idx}_{description.key}"
+        if cap.nb_inlets > 1:
+            # Multi-inlet PDUs give each inlet its own "Inlet N" sub-device, which
+            # already carries the index. Keep the entity name + object_id bare so
+            # neither the friendly name nor the entity_id doubles the "Inlet N"
+            # (HA composes "Inlet 2 Active power" / "sensor.inlet_2_active_power").
+            self._attr_translation_key = description.key
+            self._attr_suggested_object_id = description.key
+        else:
+            # The lone inlet of a single-inlet PDU lives flat on the PDU device, so
+            # the entity name carries the "Inlet 1" qualifier itself.
+            self._attr_translation_placeholders = {"idx": str(inlet_idx)}
+            # HA derives the auto-generated entity_id slug from the translation
+            # template BEFORE resolving placeholders, so "Inlet {idx} voltage"
+            # becomes "..._inlet_idx_voltage" (literal "idx"). Explicitly
+            # pre-resolve the slug so the entity_id reads as "..._inlet_1_voltage".
+            self._attr_suggested_object_id = f"inlet_{inlet_idx}_{description.key}"
         self._attr_device_info = inlet_device_info(cap, inlet_idx, coordinator.host)
 
     @property
