@@ -270,3 +270,30 @@ async def test_env_state_binary_sensor_created_for_contact(
     ]
     assert len(contact_states) == 1
     assert contact_states[0].state == "on"
+
+
+def test_is_state_env_classification() -> None:
+    """_is_state_env: state peripherals qualify, numeric do not, and a fully
+    unclassified reading (no value, no state) is dropped, not turned into a
+    permanently-unavailable ghost binary sensor."""
+    from custom_components.raritan.binary_sensor import _is_state_env
+    from custom_components.raritan.models import EnvSensorReading
+
+    def reading(sensor_type: str, value: float | None, state: bool | None) -> EnvSensorReading:
+        return EnvSensorReading(
+            sensor_id="DEV:s0",
+            label="x",
+            sensor_type=sensor_type,
+            value=value,
+            state=state,
+            unit=None,
+        )
+
+    # Mapped state type that reports a state -> binary sensor.
+    assert _is_state_env(reading("CONTACT", None, True)) is True
+    # Numeric reading (value, no state) -> not a binary sensor.
+    assert _is_state_env(reading("TEMPERATURE", 23.4, None)) is False
+    # Unmapped type but actually reports a state -> still a binary sensor.
+    assert _is_state_env(reading("UNKNOWN", None, False)) is True
+    # Fully unclassified (no value AND no state) -> dropped.
+    assert _is_state_env(reading("UNKNOWN", None, None)) is False

@@ -45,6 +45,19 @@ _ENV_STATE_DEVICE_CLASS: dict[str, BinarySensorDeviceClass | None] = {
 }
 
 
+def _is_state_env(reading: EnvSensorReading) -> bool:
+    """Whether an env reading should become a binary_sensor (a state peripheral).
+
+    A numeric reading (has a value, no state) is not. A mapped state type
+    qualifies, as does any peripheral that actually reports a state. A
+    fully-unclassified reading (no value and no state, e.g. a failed TypeSpec
+    bulk) is dropped rather than turned into a permanently-unavailable ghost.
+    """
+    if reading.state is None and reading.value is not None:
+        return False
+    return reading.sensor_type in _ENV_STATE_DEVICE_CLASS or reading.state is not None
+
+
 async def async_setup_entry(
     _hass: HomeAssistant,
     entry: RaritanConfigEntry,
@@ -66,13 +79,6 @@ async def async_setup_entry(
     # Env state peripherals are hot-pluggable: add them now and whenever the
     # coordinator's periodic rescan surfaces a new one (dynamic-devices).
     known_env: set[str] = set()
-
-    def _is_state_env(reading: EnvSensorReading) -> bool:
-        if reading.state is None and reading.value is not None:
-            return False
-        return reading.sensor_type in _ENV_STATE_DEVICE_CLASS or (
-            reading.unit is None and reading.value is None
-        )
 
     @callback
     def _add_new_env_sensors() -> None:
