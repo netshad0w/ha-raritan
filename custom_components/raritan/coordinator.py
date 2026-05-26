@@ -89,7 +89,10 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         in flight surfaces as ``http.client.CannotSendRequest('Request-sent')``
         and the write is lost. Holding ``_lock`` serializes writes against
         ticks. After the write returns, request a refresh so HA reflects the
-        new state without waiting for the next scheduled tick.
+        new state without waiting for the next scheduled tick. The refresh runs
+        after the lock is released, so two writes fired back-to-back may have
+        their refreshes coalesced by the coordinator's debouncer; the next tick
+        still converges on the true state.
         """
         async with self._lock:
             await self.hass.async_add_executor_job(
@@ -133,13 +136,16 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         return cap
 
     async def _async_update_data(self) -> CoordinatorPayload:
+        # No ``await`` may be inserted between this check and the ``async with``
+        # below: asyncio is single-threaded, so the locked() probe is only
+        # race-free as long as nothing yields the event loop in between.
         if self._lock.locked():
             self._consecutive_skips += 1
             _LOGGER.warning(
-                # Identify by host (not serial): the serial must not leak into
-                # public log files.
-                "Tick overlap on %s (skip %d/%d)",
-                self._api.host,
+                # Identify by the opaque entry_id: neither the serial nor the
+                # host should leak into log files that land in public bug reports.
+                "Tick overlap on entry %s (skip %d/%d)",
+                self._entry_id,
                 self._consecutive_skips,
                 TICK_OVERLAP_THRESHOLD,
             )
@@ -164,8 +170,15 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 self._ticks_since_env_scan = 0
                 try:
                     await self.hass.async_add_executor_job(self._api.refresh_env_sensors)
-                except Exception as exc:
+                except RaritanAPIError as exc:
+                    # Expected transport/SDK failure: keep the prior env set and
+                    # carry on with the tick. Quiet by design (hot-plug rescan).
                     _LOGGER.debug("Env peripheral rescan failed (non-fatal): %s", str(exc)[:200])
+                except Exception:
+                    # Anything else is unexpected (programming error / SDK shape
+                    # change). Still non-fatal for the tick, but log a traceback
+                    # so it surfaces instead of being silently swallowed.
+                    _LOGGER.exception("Unexpected error during env peripheral rescan (non-fatal)")
             try:
                 payload = await self.hass.async_add_executor_job(
                     self._api.fetch_telemetry, self._capabilities
@@ -230,6 +243,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 EVENT_TYPE_OUTLET_STATE_CHANGED,
                 {
                     "serial": self._capabilities.serial,
+                    "entry_id": self._entry_id,
                     "outlet_idx": outlet.idx,
                     "outlet_label": outlet.label,
                     "on_before": prev.on,
@@ -248,6 +262,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 EVENT_TYPE_ALERT,
                 {
                     "serial": self._capabilities.serial,
+                    "entry_id": self._entry_id,
                     "sensor_label": alert.sensor_label,
                     "parent_label": alert.parent_label,
                     "alert_state": alert.alert_state,
