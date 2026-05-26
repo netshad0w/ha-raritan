@@ -86,6 +86,8 @@
       "current": {"name": "Current"},
       "active_power": {"name": "Active power"},
       "apparent_power": {"name": "Apparent power"},
+      "power_factor": {"name": "Power factor"},
+      "frequency": {"name": "Frequency"},
       "active_energy": {"name": "Active energy"},
       "peak_current": {"name": "Peak current"}
     },

@@ -86,6 +86,8 @@
       "current": {"name": "Courant"},
       "active_power": {"name": "Puissance active"},
       "apparent_power": {"name": "Puissance apparente"},
+      "power_factor": {"name": "Facteur de puissance"},
+      "frequency": {"name": "Fréquence"},
       "active_energy": {"name": "Énergie active"},
       "peak_current": {"name": "Courant de crête"}
     },

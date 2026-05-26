@@ -32,24 +32,25 @@ def env_display_name(sensor_type: str) -> str:
     return sensor_type.replace("_", " ").title()
 
 
-def pdu_device_name(cap: CapabilityMatrix) -> str:
-    """Display name of the parent PDU device.
-
-    Sub-devices (outlet/OCP/env/multi-inlet/multi-PSU) prefix their name with
-    this so the names stay unambiguous when more than one PDU is configured
-    (otherwise two PDUs would both expose a bare "Outlet 24") and consistent
-    with the inlet sensors that live directly on the PDU device.
-    """
+def _pdu_device_name(cap: CapabilityMatrix) -> str:
+    """Display name of the parent PDU device."""
     return f"Raritan {cap.model} ({cap.serial})"
 
 
 def outlet_device_info(cap: CapabilityMatrix, idx: int) -> DeviceInfo:
-    """DeviceInfo for the per-outlet sub-device."""
+    """DeviceInfo for the per-outlet sub-device.
+
+    The name is bare ("Outlet 3") so entities read "Outlet 3 Active power"
+    instead of repeating the PDU model+serial on every one. The owning PDU is
+    carried by ``via_device`` (nesting in the UI) and ``serial_number`` (shown
+    in the device info box), which keep things unambiguous across several PDUs.
+    """
     return DeviceInfo(
         identifiers={(DOMAIN, f"{cap.serial}_outlet_{idx}")},
-        name=f"{pdu_device_name(cap)} Outlet {idx}",
+        name=f"Outlet {idx}",
         manufacturer="Raritan",
         model=f"{cap.model} outlet",
+        serial_number=cap.serial,
         via_device=(DOMAIN, cap.serial),
     )
 
@@ -58,9 +59,10 @@ def ocp_device_info(cap: CapabilityMatrix, idx: int) -> DeviceInfo:
     """DeviceInfo for the per-OCP (over-current protector) sub-device."""
     return DeviceInfo(
         identifiers={(DOMAIN, f"{cap.serial}_ocp_{idx}")},
-        name=f"{pdu_device_name(cap)} OCP {idx}",
+        name=f"OCP {idx}",
         manufacturer="Raritan",
         model=f"{cap.model} OCP",
+        serial_number=cap.serial,
         via_device=(DOMAIN, cap.serial),
     )
 
@@ -78,14 +80,15 @@ def inlet_device_info(cap: CapabilityMatrix, idx: int, host: str) -> DeviceInfo:
             identifiers={(DOMAIN, f"{cap.serial}_inlet_{idx}")},
             manufacturer="Raritan",
             model=f"{cap.model} inlet",
-            name=f"{pdu_device_name(cap)} Inlet {idx}",
+            name=f"Inlet {idx}",
+            serial_number=cap.serial,
             via_device=(DOMAIN, cap.serial),
         )
     return DeviceInfo(
         identifiers={(DOMAIN, cap.serial)},
         manufacturer="Raritan",
         model=cap.model,
-        name=pdu_device_name(cap),
+        name=_pdu_device_name(cap),
         sw_version=cap.firmware,
         hw_version=cap.hw_revision,
         configuration_url=f"https://{host}/",
@@ -102,9 +105,10 @@ def psu_device_info(cap: CapabilityMatrix, idx: int) -> DeviceInfo:
     if cap.nb_psu > 1:
         return DeviceInfo(
             identifiers={(DOMAIN, f"{cap.serial}_psu_{idx}")},
-            name=f"{pdu_device_name(cap)} PSU {idx}",
+            name=f"PSU {idx}",
             manufacturer="Raritan",
             model=f"{cap.model} PSU",
+            serial_number=cap.serial,
             via_device=(DOMAIN, cap.serial),
         )
     return DeviceInfo(
@@ -119,8 +123,9 @@ def env_device_info(cap: CapabilityMatrix, safe_id: str, label: str) -> DeviceIn
     """
     return DeviceInfo(
         identifiers={(DOMAIN, f"{cap.serial}_env_{safe_id}")},
-        name=f"{pdu_device_name(cap)} {label}",
+        name=label,
         manufacturer="Raritan",
         model=f"{cap.model} env",
+        serial_number=cap.serial,
         via_device=(DOMAIN, cap.serial),
     )
