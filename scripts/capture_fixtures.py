@@ -61,7 +61,7 @@ def anonymize(value: Any, real_host: str) -> Any:
 def capture(host: str, user: str, password: str, output: Path, no_verify_tls: bool) -> None:
     from raritan.rpc import Agent, pdumodel  # type: ignore[import-not-found]
 
-    agent = Agent(host, user, password, disable_certificate_verification=no_verify_tls)
+    agent = Agent("https", host, user, password, disable_certificate_verification=no_verify_tls)
     pdu = pdumodel.Pdu("/model/pdu/0", agent)
 
     output.mkdir(parents=True, exist_ok=True)
