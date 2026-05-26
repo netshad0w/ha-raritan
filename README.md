@@ -50,7 +50,7 @@ Verified end-to-end on a **PX3-5487V-N2** (24 outlets, ~200 entities). A steady-
 
 ## Requirements
 
-- Home Assistant **2026.3** or later.
+- Home Assistant **2026.5.4** or later.
 - Python 3.14+ (managed by HA).
 - Network reachability from HA to the PDU on **HTTPS port 443** (configurable). HTTP works but raises a repair issue.
 - A PDU user account. Read-only access works for the inlet/outlet/OCP/env metering subset; full feature set requires the additional permissions noted above.
