@@ -5,6 +5,13 @@ on:
     branches: [main, develop]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -65,13 +72,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: home-assistant/actions/hassfest@master
+      - uses: home-assistant/actions/hassfest@f6f29a7ee3fa0eccadf3620a7b9ee00ab54ec03b  # master
 
   hacs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: hacs/action@main
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a  # 22.5.0
         with:
           category: integration
           # Brand images live in the home-assistant/brands repo, which a new
