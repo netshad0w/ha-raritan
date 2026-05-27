@@ -23,6 +23,7 @@ from .models import AlertSnapshot, CoordinatorPayload
 from .repairs import clear_unreachable_issue, create_unreachable_issue
 
 if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from .api import RaritanAPI
@@ -38,22 +39,26 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         self,
         *,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         api: RaritanAPI,
         capabilities: CapabilityMatrix,
         scan_interval: int,
-        entry_id: str,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
-            # Use entry_id (not the PDU serial) for the coordinator name: the
+            # Pass the entry explicitly: the base coordinator otherwise falls back
+            # to the deprecated current_entry ContextVar to find it, and only the
+            # explicit path wires async_shutdown to the entry's unload.
+            config_entry=config_entry,
+            # Key the coordinator name off the entry id (not the PDU serial): the
             # name is written to public log files and the serial must not leak.
-            name=f"{DOMAIN}_{entry_id}",
+            name=f"{DOMAIN}_{config_entry.entry_id}",
             update_interval=timedelta(seconds=scan_interval),
         )
         self._api = api
         self._capabilities = capabilities
-        self._entry_id = entry_id
+        self._entry_id = config_entry.entry_id
         self._lock = asyncio.Lock()
         self._consecutive_skips = 0
         self._previous_outlets: list[OutletReading] | None = None
