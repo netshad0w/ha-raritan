@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.raritan.api import RaritanAPI
+from custom_components.raritan.device_info import slug_sensor_id
 from custom_components.raritan.models import CapabilityMatrix
 from tests.helpers import make_fake_bulk_helper_class
 
@@ -1666,8 +1667,6 @@ def test_refresh_env_sensors_dedupes_when_serials_collide_after_slug(
     assert "slot_1:n0" in ids  # second slugs to the same string, so it falls back
     assert len(ids) == 2
     # The slugged ids (what the entity unique_id is built from) stay distinct.
-    from custom_components.raritan.device_info import slug_sensor_id
-
     assert len({slug_sensor_id(i) for i in ids}) == 2
 
 
@@ -1697,6 +1696,34 @@ def test_refresh_env_sensors_warns_when_a_peripheral_changes_type(
     assert any("TEMPERATURE" in r.getMessage() and "HUMIDITY" in r.getMessage() for r in warnings)
     # Privacy: the raw id (may carry a serial) must not leak into a WARNING.
     assert not any("slot_0:n0" in r.getMessage() for r in warnings)
+
+
+def test_refresh_env_sensors_warns_when_a_slot_swaps_numeric_for_state(
+    api: RaritanAPI, fake_bulk: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A slot reused for a different kind of sensor (numeric -> state) also leaves
+    a stale entity behind -- the old numeric one goes unavailable while a new
+    binary_sensor appears. The id suffix flips (:n0 -> :s0) but the slot is the
+    same, so the warning must still fire on the underlying slot, not the id."""
+    num_device = _make_peripheral_device(serial="", numeric=(8, 7, 21.0))  # TEMPERATURE
+    pdu = _pdu_with_peripherals([_make_peripheral_slot(num_device)])
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        first = api.refresh_env_sensors()
+        assert "slot_0:n0" in first
+        # Same physical slot now carries a CONTACT state sensor.
+        state_device = _make_peripheral_device(serial="", state=(12, 0, True))  # CONTACT
+        pdu.getPeripheralDeviceManager.return_value.getDeviceSlots.return_value = [
+            _make_peripheral_slot(state_device)
+        ]
+        with caplog.at_level(logging.WARNING, logger="custom_components.raritan.api"):
+            second = api.refresh_env_sensors()
+    assert "slot_0:s0" in second
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("TEMPERATURE" in r.getMessage() and "CONTACT" in r.getMessage() for r in warnings)
 
 
 def test_refresh_env_sensors_no_warning_when_type_is_stable(
