@@ -13,5 +13,5 @@
   "issue_tracker": "https://github.com/netshad0w/ha-raritan/issues",
   "loggers": ["raritan", "custom_components.raritan"],
   "requirements": ["raritan>=4.3.13.52458"],
-  "version": "1.0.4"
+  "version": "1.0.5"
 }
