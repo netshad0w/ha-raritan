@@ -15,6 +15,7 @@ from raritan.rpc import (
     pdumodel,
 )
 
+from .device_info import slug_sensor_id
 from .models import (
     AlertSnapshot,
     CapabilityMatrix,
@@ -406,7 +407,7 @@ class RaritanAPI:
         # (never a list). Classify numeric vs state by which read method it
         # exposes (NumericSensor.getReading vs StateSensor.getState).
         pending: list[tuple[str, str, Any, bool]] = []  # (base_id, label, proxy, is_state)
-        seen_base_ids: set[str] = set()
+        seen_slugs: set[str] = set()
         for slot_idx, device in enumerate(devices):
             if isinstance(device, Exception) or device is None:
                 continue
@@ -432,17 +433,20 @@ class RaritanAPI:
             base_id = serial or f"slot_{slot_idx}"
             label = serial or f"Peripheral {slot_idx}"
             # Two peripherals can report the same serial (cloned hardware, or an
-            # empty serial on both): a shared base_id would make one env sensor
-            # shadow the other in env_by_id. Fall back to the slot-derived id,
-            # suffixing until it is genuinely unique so even a real serial that
-            # happens to equal our "slot_N" fallback can't collide either.
-            if base_id in seen_base_ids:
+            # empty serial on both): a shared id would make one env sensor shadow
+            # the other in env_by_id. Dedupe on the *slugged* id, not the raw one:
+            # the id is slugified for the entity unique_id (slug_sensor_id maps
+            # ':' and '/' to '_'), so distinct serials like "A:B" and "A_B" still
+            # collapse to one unique_id. Fall back to the slot-derived id,
+            # suffixing until the slug is unique -- so even a real serial that
+            # collides post-slug (or equals our "slot_N" fallback) can't clash.
+            if slug_sensor_id(base_id) in seen_slugs:
                 base_id = f"slot_{slot_idx}"
                 suffix = 0
-                while base_id in seen_base_ids:
+                while slug_sensor_id(base_id) in seen_slugs:
                     suffix += 1
                     base_id = f"slot_{slot_idx}_{suffix}"
-            seen_base_ids.add(base_id)
+            seen_slugs.add(slug_sensor_id(base_id))
             pending.append((base_id, label, sensor_proxy, is_state))
 
         # Second bulk roundtrip: classify every sensor's TypeSpec at once.
