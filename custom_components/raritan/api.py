@@ -369,23 +369,31 @@ class RaritanAPI:
     def _warn_on_env_type_change(
         previous: list[_EnvSensor] | None, current: list[_EnvSensor]
     ) -> None:
-        """Warn when a peripheral keeps its id but reports a new reading type.
+        """Warn when a slot reports a different reading type than it used to.
 
-        The entity's device class, unit and name are fixed when it is first
-        created from the reading type; a numeric<->state swap changes the id (the
-        ``:n0`` / ``:s0`` suffix) and so re-adds a fresh entity, but a same-kind
-        reclassification (a serial-less slot reused for a different SmartSensor)
-        reuses the id and leaves the entity frozen on the stale class. Rewriting
-        a live entity's class/unit would break its long-term statistics, so this
-        only logs and asks the user to remove and re-add it. The id may embed the
-        peripheral serial, so it is kept to debug; the warning names only the
-        (non-identifying) type transition.
+        The entity's device class, unit and name are fixed from the reading type
+        the first time it is seen. When a serial-less slot is reused for a
+        different SmartSensor it keeps its base id, so it either reuses the same
+        entity (same kind) and freezes it on the stale class, or flips the
+        ``:n0`` / ``:s0`` suffix (numeric<->state) and leaves the old entity
+        orphaned and unavailable beside a fresh one. Both warrant a heads-up, so
+        the comparison keys on the base id (without the suffix), not the full id.
+        Rewriting a live entity's class/unit would break its long-term
+        statistics, so this only logs and asks the user to remove and re-add it.
+        The id may embed the peripheral serial, so it is kept to debug; the
+        warning names only the (non-identifying) type transition.
         """
-        if not previous:
+        if previous is None:
             return
-        prior_types = {s.sensor_id: s.sensor_type for s in previous}
+
+        def _base(sensor_id: str) -> str:
+            # Drop the trailing :n0 / :s0 kind suffix so a numeric<->state swap on
+            # the same slot still compares against its prior reading type.
+            return sensor_id.rsplit(":", 1)[0]
+
+        prior_types = {_base(s.sensor_id): s.sensor_type for s in previous}
         for sensor in current:
-            was = prior_types.get(sensor.sensor_id)
+            was = prior_types.get(_base(sensor.sensor_id))
             if was is not None and was != sensor.sensor_type:
                 _LOGGER.warning(
                     "An env peripheral was reclassified from %s to %s; its Home "
