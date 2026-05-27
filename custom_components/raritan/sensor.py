@@ -100,8 +100,6 @@ INLET_SENSORS: tuple[RaritanInletSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=2,
-        # Derived quantity, rarely actioned on; off by default to reduce clutter.
-        entity_registry_enabled_default=False,
         value_fn=lambda r: r.power_factor,
         scale=100.0,
     ),
@@ -212,8 +210,6 @@ OCP_SENSORS: tuple[RaritanOcpSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         suggested_display_precision=3,
-        # Diagnostic high-water mark; off by default to reduce clutter.
-        entity_registry_enabled_default=False,
         value_fn=lambda r: r.peak_current,
     ),
 )
