@@ -483,6 +483,9 @@ class RaritanAPI:
             if slug_sensor_id(base_id) in seen_slugs:
                 base_id = f"slot_{slot_idx}"
                 suffix = 0
+                # Each pass appends a strictly larger suffix and ``seen_slugs`` is
+                # finite, so a fresh slug is reached in at most len(seen_slugs)+1
+                # steps -- the loop always terminates.
                 while slug_sensor_id(base_id) in seen_slugs:
                     suffix += 1
                     base_id = f"slot_{slot_idx}_{suffix}"
