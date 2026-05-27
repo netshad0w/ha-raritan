@@ -6,8 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import RaritanAPIError
 from .const import DOMAIN
 from .device_info import outlet_device_info
 
@@ -75,10 +77,6 @@ class RaritanOutletSwitch(CoordinatorEntity["RaritanDataUpdateCoordinator"], Swi
         await self._set_state(on=False)
 
     async def _set_state(self, *, on: bool) -> None:
-        from homeassistant.exceptions import HomeAssistantError
-
-        from .api import RaritanAPIError
-
         try:
             # Route through coordinator so the write shares the read-path lock
             # and the SDK's single HTTP connection isn't double-driven.
