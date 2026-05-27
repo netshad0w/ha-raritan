@@ -108,10 +108,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     coordinator = RaritanDataUpdateCoordinator(
         hass=hass,
+        config_entry=entry,
         api=api,
         capabilities=capabilities,
         scan_interval=scan_interval,
-        entry_id=entry.entry_id,
     )
     await coordinator.async_config_entry_first_refresh()
 
