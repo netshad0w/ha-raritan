@@ -68,6 +68,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
         verify_tls=entry.data[CONF_VERIFY_TLS],
         ca_bundle=entry.data.get(CONF_CA_BUNDLE),
     )
+    # Close the agent's socket on unload, including the ConfigEntryNotReady paths
+    # below (probe/firmware/first-refresh): those raise before runtime_data is
+    # set, so the unload handler can't reach the api -- without this, each
+    # SETUP_RETRY would leak a connection. close() is idempotent.
+    entry.async_on_unload(api.close)
 
     try:
         capabilities = await hass.async_add_executor_job(api.probe)
@@ -172,10 +177,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
 
 async def async_unload_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok and hasattr(entry, "runtime_data"):
-        entry.runtime_data.api.close()
-    return unload_ok
+    # api.close() runs via the entry.async_on_unload callback registered in setup.
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_migrate_entry(_hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -222,7 +225,18 @@ def _migrate_inlet_idx_entity_ids(hass: HomeAssistant, *, entry_id: str) -> None
         if match is None:
             continue
         new_entity_id = ent.entity_id.replace("_inlet_idx_", f"_inlet_{match.group(1)}_")
-        if new_entity_id == ent.entity_id or registry.async_get(new_entity_id) is not None:
+        if new_entity_id == ent.entity_id:
+            continue
+        if registry.async_get(new_entity_id) is not None:
+            # The target id is already taken (e.g. both the broken and the fixed
+            # entity exist), so the rename would clobber it. Skip, but warn --
+            # otherwise the stale `_inlet_idx_` entity stays forever with no clue.
+            _LOGGER.warning(
+                "Cannot rename %s to %s: the target entity_id already exists; "
+                "remove the stale one manually",
+                ent.entity_id,
+                new_entity_id,
+            )
             continue
         _LOGGER.info("Renaming %s -> %s", ent.entity_id, new_entity_id)
         registry.async_update_entity(ent.entity_id, new_entity_id=new_entity_id)
