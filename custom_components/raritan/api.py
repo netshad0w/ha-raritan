@@ -101,7 +101,8 @@ _UNIT_NAMES: dict[int, str] = {
 # ~50 s on PX3 firmware 4.3.x: the cached structs start returning
 # `Reading.valid=False` and `Outlet.State.available=False` for every outlet
 # until close()/reconnect. Re-fetching the structs costs one extra bulk
-# roundtrip per ~30 s tick, which is the cheapest known mitigation.
+# roundtrip every 30 s (so every 6th tick at the default 5 s interval), which
+# is the cheapest known mitigation.
 _OUTLET_SENSORS_TTL = 30.0
 
 
@@ -194,7 +195,15 @@ class RaritanAPI:
         # The Agent class accepts no kwarg for a custom CA file, so injecting our
         # own SSLContext post-construction is the only supported path.
         if self._verify_tls and self._ca_bundle:
-            ctx = ssl.create_default_context(cafile=self._ca_bundle)
+            try:
+                ctx = ssl.create_default_context(cafile=self._ca_bundle)
+            except (OSError, ssl.SSLError) as exc:
+                # The bundle was validated at config time, but it can later go
+                # missing or unreadable. Drop the half-built agent so the next
+                # call rebuilds cleanly, and raise a mapped TLS error instead of
+                # an unmapped OSError escaping and aborting the telemetry tick.
+                self._agent = None
+                raise RaritanTLSError("CA bundle could not be loaded") from exc
             self._agent._context = ctx
         self._pdu = pdumodel.Pdu("/model/pdu/0", self._agent)
         _LOGGER.debug("Created HttpAgent for %s", self._host)
@@ -237,12 +246,16 @@ class RaritanAPI:
         self._env_sensors = None
         self._psu_state_sensors = None
 
-    @staticmethod
-    def _remap(exc: Exception) -> RaritanAPIError:
+    def _remap(self, exc: Exception) -> RaritanAPIError:
         # Truncate the stringified SDK exception before it flows into HA logs
         # via ConfigEntryNotReady/UpdateFailed: a raw PDU response body (or a
         # JSON-RPC error payload) can be large and may echo request internals.
         text = str(exc)[:200]
+        # A TLS hostname-mismatch error (common with a PDU's self-signed cert)
+        # echoes the target host in its message, and this text surfaces at
+        # WARNING level. Scrub the host so it can't leak into a public bug report.
+        if self._host:
+            text = text.replace(self._host, "<host>")
         msg = text.lower()
         if "certificate" in msg or "ssl" in msg or "tls" in msg:
             return RaritanTLSError(text)
@@ -1030,6 +1043,24 @@ class RaritanAPI:
         return self._build_alert_snapshots(sensor_data_list)
 
     @staticmethod
+    def _friendly_parent_label(target: str) -> str:
+        """Turn an alert parent's RPC target into a readable label.
+
+        ``target`` is the parent proxy's RID, e.g. ``/model/pdu/0/inlet/0`` or
+        ``/model/pdu/0/outlet/2``. Map the ``<kind>/<index>`` tail to the bare
+        names the rest of the integration uses ("Inlet 1", "Outlet 3", "OCP 1"),
+        turning the 0-based RID index into the 1-based label. Anything that
+        doesn't match a known kind (an env peripheral, a future SDK path) falls
+        back to the raw target, so it degrades to the old value, never an empty
+        one.
+        """
+        kinds = {"inlet": "Inlet", "outlet": "Outlet", "overCurrentProtector": "OCP"}
+        parts = target.rstrip("/").split("/")
+        if len(parts) >= 2 and parts[-2] in kinds and parts[-1].isdigit():
+            return f"{kinds[parts[-2]]} {int(parts[-1]) + 1}"
+        return target
+
+    @staticmethod
     def _decode_alert_label(md: Any) -> str:
         """Decode a getMetaData() result to a sensor label, never raising.
 
@@ -1091,7 +1122,11 @@ class RaritanAPI:
             # (the RID string). The leading-underscore `_target` form is not part
             # of the SDK API and would silently break on a future SDK refactor.
             sensor_id = str(getattr(sensor, "target", "")) if sensor is not None else ""
-            parent_label = str(getattr(parent, "target", "")) if parent is not None else "?"
+            parent_label = (
+                self._friendly_parent_label(str(getattr(parent, "target", "")))
+                if parent is not None
+                else "?"
+            )
             snapshots.append(
                 AlertSnapshot(
                     sensor_label=sensor_label,

@@ -96,7 +96,7 @@ class AlertSnapshot:
     """A single alerted-sensor snapshot of one alarm state."""
 
     sensor_label: str  # e.g. "RMS Current" or "Temperature"
-    parent_label: str  # e.g. "Inlet I1" or "Outlet 3" or "PDU"
+    parent_label: str  # e.g. "Inlet 1" or "Outlet 3", else the parent's RID
     alert_state: str  # "CRITICAL" | "WARNED" | "UNAVAILABLE" | "NORMAL"
     sensor_id: str  # stable identifier we can compare across ticks
     # (typically the sensor proxy's RPC target string)
