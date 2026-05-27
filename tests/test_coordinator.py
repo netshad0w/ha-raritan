@@ -93,6 +93,25 @@ async def test_coordinator_returns_payload_on_successful_tick(
     await coord.async_shutdown()
 
 
+async def test_coordinator_forwards_the_config_entry_to_the_base(
+    hass: HomeAssistant, capability: CapabilityMatrix, fake_payload: CoordinatorPayload
+) -> None:
+    """The coordinator must hand the entry to the base DataUpdateCoordinator (so
+    async_shutdown is wired to its unload), not rely on the current_entry
+    ContextVar. The entry is required, so omitting it is a TypeError."""
+    api = _make_api(fake_payload)
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="ENTRY1")
+    coord = RaritanDataUpdateCoordinator(
+        hass=hass, config_entry=entry, api=api, capabilities=capability, scan_interval=5
+    )
+    assert coord.config_entry is entry
+
+    with pytest.raises(TypeError):
+        RaritanDataUpdateCoordinator(  # type: ignore[call-arg]
+            hass=hass, api=api, capabilities=capability, scan_interval=5
+        )
+
+
 async def test_coordinator_periodic_env_rescan(
     hass: HomeAssistant,
     capability: CapabilityMatrix,
