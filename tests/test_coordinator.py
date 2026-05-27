@@ -86,7 +86,7 @@ async def test_coordinator_returns_payload_on_successful_tick(
     entry.add_to_hass(hass)
     entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     coord.config_entry = entry
     await coord.async_config_entry_first_refresh()
@@ -104,7 +104,7 @@ async def test_coordinator_periodic_env_rescan(
     monkeypatch.setattr("custom_components.raritan.coordinator.ENV_RESCAN_EVERY", 1)
     api = _make_api(fake_payload)
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     await coord.async_refresh()
     await hass.async_block_till_done()
@@ -125,7 +125,7 @@ async def test_coordinator_env_rescan_failure_is_non_fatal(
     api = _make_api(fake_payload)
     api.refresh_env_sensors.side_effect = RuntimeError("boom")
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     with caplog.at_level(logging.DEBUG, logger="custom_components.raritan.coordinator"):
         await coord.async_refresh()
@@ -151,7 +151,7 @@ async def test_coordinator_env_rescan_transport_error_is_non_fatal(
     api = _make_api(fake_payload)
     api.refresh_env_sensors.side_effect = RaritanConnectionError("unreachable")
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     with caplog.at_level(logging.DEBUG, logger="custom_components.raritan.coordinator"):
         await coord.async_refresh()
@@ -184,7 +184,7 @@ async def test_coordinator_serializes_concurrent_ticks(
     api = _make_api(fake_payload)
     api.fetch_telemetry.side_effect = slow_fetch
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     await asyncio.gather(
         coord.async_request_refresh(),
@@ -200,7 +200,7 @@ async def test_coordinator_tick_skip_on_overlap_increments_counter(
     api = _make_api(fake_payload)
 
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     coord._lock = asyncio.Lock()  # type: ignore[attr-defined]
     await coord._lock.acquire()
@@ -216,7 +216,7 @@ async def test_coordinator_three_skips_raises_update_failed(
 ) -> None:
     api = _make_api(fake_payload)
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     coord._lock = asyncio.Lock()  # type: ignore[attr-defined]
     await coord._lock.acquire()
@@ -236,7 +236,7 @@ async def test_coordinator_remaps_api_errors(
     api.fetch_telemetry.side_effect = RaritanConnectionError("unreachable")
     api.fetch_alerts.return_value = []
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     with pytest.raises(UpdateFailed):
         await coord._async_update_data()
@@ -252,7 +252,7 @@ async def test_coordinator_raises_auth_failed_on_auth_error(
     api.fetch_telemetry.side_effect = RaritanAuthError("forbidden")
     api.fetch_alerts.return_value = []
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     with pytest.raises(ConfigEntryAuthFailed):
         await coord._async_update_data()
@@ -299,7 +299,7 @@ async def test_coordinator_no_event_on_first_tick(
     payload = _make_outlet_payload({1: True, 2: False})
     api = _make_api(payload)
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_OUTLET_STATE_CHANGED, lambda e: events.append(e))
@@ -317,7 +317,7 @@ async def test_coordinator_fires_outlet_state_change_event(
     api = MagicMock()
     api.fetch_alerts.return_value = []
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_OUTLET_STATE_CHANGED, lambda e: events.append(e))
@@ -342,7 +342,7 @@ async def test_coordinator_no_outlet_event_when_unchanged(
     api.fetch_alerts.return_value = []
     api.fetch_telemetry.return_value = _make_outlet_payload({1: True})
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_OUTLET_STATE_CHANGED, lambda e: events.append(e))
@@ -380,7 +380,7 @@ async def test_coordinator_fires_alert_event_on_new_alert(
     api = MagicMock()
     api.fetch_telemetry.side_effect = [_payload_with_alerts([]), _payload_with_alerts([snap])]
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_ALERT, lambda e: events.append(e))
@@ -399,7 +399,7 @@ async def test_coordinator_overlap_returns_existing_data_when_present(
     """When tick overlap occurs and prior data exists, the lock branch returns it."""
     api = _make_api(fake_payload)
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     # Establish prior data
     await coord._async_update_data()
@@ -425,7 +425,7 @@ async def test_coordinator_does_not_poll_alerts_separately(
     # If the coordinator wrongly called this, it would blow up the tick.
     api.fetch_alerts.side_effect = RaritanConnectionError("must not be called")
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     payload = await coord._async_update_data()
     assert payload is fake_payload
@@ -449,7 +449,7 @@ async def test_coordinator_does_not_re_fire_existing_alert(
     api = MagicMock()
     api.fetch_telemetry.side_effect = [_payload_with_alerts([snap]), _payload_with_alerts([snap])]
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_ALERT, lambda e: events.append(e))
@@ -474,7 +474,7 @@ async def test_coordinator_no_alert_event_when_alert_disappears(
     api = MagicMock()
     api.fetch_telemetry.side_effect = [_payload_with_alerts([snap]), _payload_with_alerts([])]
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_ALERT, lambda e: events.append(e))
@@ -501,7 +501,7 @@ async def test_async_set_outlet_state_holds_lock_while_calling_api(
 
     api.set_outlet_state.side_effect = _record_lock
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
 
     await coord.async_set_outlet_state(idx=5, on=True)
@@ -521,7 +521,7 @@ async def test_async_cycle_outlet_holds_lock_while_calling_api(
 
     api.cycle_outlet.side_effect = _record_lock
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
 
     await coord.async_cycle_outlet(idx=3)
@@ -541,7 +541,7 @@ async def test_async_reset_inlet_energy_holds_lock(
 
     api.reset_inlet_energy.side_effect = _record_lock
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
 
     await coord.async_reset_inlet_energy(idx=1)
@@ -561,7 +561,7 @@ async def test_async_reset_outlet_energy_holds_lock(
 
     api.reset_outlet_energy.side_effect = _record_lock
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
 
     await coord.async_reset_outlet_energy(idx=2)
@@ -582,7 +582,7 @@ async def test_async_set_outlet_state_blocks_when_lock_held(
 
     api = MagicMock()
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
 
     await coord._lock.acquire()
@@ -668,24 +668,6 @@ async def test_unreachable_cleared_on_recovery(
     assert coord._unreachable_since is None
 
 
-async def test_unreachable_tracking_noop_without_entry_id(
-    hass: HomeAssistant, capability: CapabilityMatrix
-) -> None:
-    """Without an entry_id the coordinator cannot key a repair, so it stays silent."""
-    api = MagicMock()
-    api.host = "10.0.0.1"
-    api.fetch_telemetry.side_effect = RaritanConnectionError("unreachable")
-    api.fetch_alerts.return_value = []
-    coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
-    )
-    coord._unreachable_since = hass.loop.time() - UNREACHABLE_REPAIR_THRESHOLD
-    with pytest.raises(UpdateFailed):
-        await coord._async_update_data()
-    # No entry_id -> no issue keyed anywhere.
-    assert not ir.async_get(hass).issues
-
-
 # ---------------------------------------------------------------------------
 # One roundtrip per tick: alerts folded into telemetry, no separate fetch_alerts
 # ---------------------------------------------------------------------------
@@ -699,7 +681,7 @@ async def test_coordinator_tick_does_not_call_fetch_alerts_separately(
     api = MagicMock()
     api.fetch_telemetry.return_value = fake_payload
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     await coord._async_update_data()
     api.fetch_alerts.assert_not_called()
@@ -733,7 +715,7 @@ async def test_coordinator_fires_alert_event_from_payload(
     api = MagicMock()
     api.fetch_telemetry.side_effect = [_payload([]), _payload([snap])]
     coord = RaritanDataUpdateCoordinator(
-        hass=hass, api=api, capabilities=capability, scan_interval=5
+        hass=hass, api=api, capabilities=capability, scan_interval=5, entry_id="ENTRY1"
     )
     events: list = []
     hass.bus.async_listen(EVENT_TYPE_ALERT, lambda e: events.append(e))
