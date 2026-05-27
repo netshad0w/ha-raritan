@@ -170,6 +170,11 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 consecutive_skips=self._consecutive_skips,
             )
         async with self._lock:
+            # Acquiring the lock means this tick did not skip, so the overlap
+            # streak is broken now -- not only on a successful fetch. A fetch
+            # failure below is a separate condition (unreachable) and must not
+            # leave a stale skip count that trips the overlap threshold early.
+            self._consecutive_skips = 0
             self._ticks_since_env_scan += 1
             if self._ticks_since_env_scan >= ENV_RESCAN_EVERY:
                 self._ticks_since_env_scan = 0
