@@ -361,8 +361,40 @@ class RaritanAPI:
         walked = self._walk_env_sensors(pdu)
         if walked is None:
             return tuple(s.sensor_id for s in (self._env_sensors or []))
+        self._warn_on_env_type_change(self._env_sensors, walked)
         self._env_sensors = walked
         return tuple(s.sensor_id for s in walked)
+
+    @staticmethod
+    def _warn_on_env_type_change(
+        previous: list[_EnvSensor] | None, current: list[_EnvSensor]
+    ) -> None:
+        """Warn when a peripheral keeps its id but reports a new reading type.
+
+        The entity's device class, unit and name are fixed when it is first
+        created from the reading type; a numeric<->state swap changes the id (the
+        ``:n0`` / ``:s0`` suffix) and so re-adds a fresh entity, but a same-kind
+        reclassification (a serial-less slot reused for a different SmartSensor)
+        reuses the id and leaves the entity frozen on the stale class. Rewriting
+        a live entity's class/unit would break its long-term statistics, so this
+        only logs and asks the user to remove and re-add it. The id may embed the
+        peripheral serial, so it is kept to debug; the warning names only the
+        (non-identifying) type transition.
+        """
+        if not previous:
+            return
+        prior_types = {s.sensor_id: s.sensor_type for s in previous}
+        for sensor in current:
+            was = prior_types.get(sensor.sensor_id)
+            if was is not None and was != sensor.sensor_type:
+                _LOGGER.warning(
+                    "An env peripheral was reclassified from %s to %s; its Home "
+                    "Assistant entity keeps the old device class and unit until "
+                    "it is removed and re-added",
+                    was,
+                    sensor.sensor_type,
+                )
+                _LOGGER.debug("Reclassified env peripheral id: %s", sensor.sensor_id)
 
     def _walk_env_sensors(self, pdu: Any) -> list[_EnvSensor] | None:
         """Walk peripheral slots and classify sensors.

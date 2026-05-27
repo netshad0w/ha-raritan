@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -1668,6 +1669,52 @@ def test_refresh_env_sensors_dedupes_when_serials_collide_after_slug(
     from custom_components.raritan.device_info import slug_sensor_id
 
     assert len({slug_sensor_id(i) for i in ids}) == 2
+
+
+def test_refresh_env_sensors_warns_when_a_peripheral_changes_type(
+    api: RaritanAPI, fake_bulk: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A peripheral keeping its id but reporting a new reading type (e.g. a
+    serial-less slot reused for a different SmartSensor) leaves its entity frozen
+    on the old device class and unit. The rescan can't safely rewrite a live
+    entity, so it warns the user to remove and re-add it. The warning must not
+    echo the raw id, which can embed the peripheral serial."""
+    device = _make_peripheral_device(serial="", numeric=(8, 7, 21.0))  # TEMPERATURE
+    pdu = _pdu_with_peripherals([_make_peripheral_slot(device)])
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        first = api.refresh_env_sensors()
+        assert "slot_0:n0" in first  # serial-less -> slot-derived id
+        # The slot now classifies as HUMIDITY, but the id (slot_0:n0) is unchanged.
+        device.device.getTypeSpec.return_value = MagicMock(readingtype=9, unit=7)
+        with caplog.at_level(logging.WARNING, logger="custom_components.raritan.api"):
+            second = api.refresh_env_sensors()
+    assert "slot_0:n0" in second
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("TEMPERATURE" in r.getMessage() and "HUMIDITY" in r.getMessage() for r in warnings)
+    # Privacy: the raw id (may carry a serial) must not leak into a WARNING.
+    assert not any("slot_0:n0" in r.getMessage() for r in warnings)
+
+
+def test_refresh_env_sensors_no_warning_when_type_is_stable(
+    api: RaritanAPI, fake_bulk: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A rescan that re-confirms the same type must stay quiet (no false alarm)."""
+    pdu = _pdu_with_peripherals(
+        [_make_peripheral_slot(_make_peripheral_device(serial="DEV9", numeric=(8, 7, 21.0)))]
+    )
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        api.refresh_env_sensors()
+        with caplog.at_level(logging.WARNING, logger="custom_components.raritan.api"):
+            api.refresh_env_sensors()
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
 
 
 def test_refresh_env_sensors_preserves_on_bulk_transport_failure(
