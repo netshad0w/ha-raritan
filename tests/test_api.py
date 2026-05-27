@@ -1642,6 +1642,34 @@ def test_refresh_env_sensors_dedupes_when_serial_equals_slot_fallback(
     assert len(ids) == 2
 
 
+def test_refresh_env_sensors_dedupes_when_serials_collide_after_slug(
+    api: RaritanAPI, fake_bulk: MagicMock
+) -> None:
+    """Distinct serials that slugify to the same id must not collide. The id is
+    slugified for the entity unique_id (':' and '/' both become '_'), so serials
+    like "A:B" and "A_B" map to the same slug. The second falls back to its slot
+    id so the two env sensors keep separate unique_ids."""
+    pdu = _pdu_with_peripherals(
+        [
+            _make_peripheral_slot(_make_peripheral_device(serial="A:B", numeric=(8, 7, 21.0))),
+            _make_peripheral_slot(_make_peripheral_device(serial="A_B", numeric=(8, 7, 22.0))),
+        ]
+    )
+    with (
+        patch("custom_components.raritan.api.Agent"),
+        patch("custom_components.raritan.api.pdumodel.Pdu", return_value=pdu),
+        patch("custom_components.raritan.api.BulkRequestHelper", new=fake_bulk),
+    ):
+        ids = api.refresh_env_sensors()
+    assert "A:B:n0" in ids  # first keeps its serial-derived id
+    assert "slot_1:n0" in ids  # second slugs to the same string, so it falls back
+    assert len(ids) == 2
+    # The slugged ids (what the entity unique_id is built from) stay distinct.
+    from custom_components.raritan.device_info import slug_sensor_id
+
+    assert len({slug_sensor_id(i) for i in ids}) == 2
+
+
 def test_refresh_env_sensors_preserves_on_bulk_transport_failure(
     api: RaritanAPI, fake_bulk: MagicMock
 ) -> None:
