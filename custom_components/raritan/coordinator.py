@@ -41,7 +41,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         api: RaritanAPI,
         capabilities: CapabilityMatrix,
         scan_interval: int,
-        entry_id: str | None = None,
+        entry_id: str,
     ) -> None:
         super().__init__(
             hass,
@@ -208,8 +208,6 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         the threshold. Re-issued each failing tick (``async_create_issue`` is
         idempotent on the issue_id) so the "for N minutes" text stays current.
         """
-        if self._entry_id is None:
-            return
         now = self.hass.loop.time()
         if self._unreachable_since is None:
             self._unreachable_since = now
@@ -228,8 +226,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
         if self._unreachable_since is None:
             return
         self._unreachable_since = None
-        if self._entry_id is not None:
-            clear_unreachable_issue(self.hass, entry_id=self._entry_id)
+        clear_unreachable_issue(self.hass, entry_id=self._entry_id)
 
     def _fire_outlet_state_change_events(self, outlets: list[OutletReading]) -> None:
         if self._previous_outlets is None:
