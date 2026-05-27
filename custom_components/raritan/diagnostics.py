@@ -78,7 +78,7 @@ async def async_get_config_entry_diagnostics(
         "entry": {
             "version": entry.version,
             "data": async_redact_data(dict(entry.data), REDACTED_KEYS),
-            "options": dict(entry.options),
+            "options": async_redact_data(dict(entry.options), REDACTED_KEYS),
         },
         "capabilities": async_redact_data(asdict(runtime.capabilities), REDACTED_KEYS),
         "coordinator": {
