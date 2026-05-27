@@ -969,7 +969,7 @@ def test_fetch_alerts_returns_snapshot_with_label_and_state(
     assert len(snapshots) == 1
     s = snapshots[0]
     assert s.sensor_label == "RMS Current"
-    assert s.parent_label == "/model/pdu/0/inlet/0"
+    assert s.parent_label == "Inlet 1"  # RID /model/pdu/0/inlet/0 -> friendly label
     assert s.alert_state == "CRITICAL"
     assert s.sensor_id == "/model/pdu/0/inlet/0/sensors/current"
 
@@ -2274,12 +2274,20 @@ def test_reset_outlet_energy_invalid_idx_raises_raritan_error(
 # ---------------------------------------------------------------------------
 
 
-def test_remap_truncates_long_exception_body() -> None:
+def test_remap_truncates_long_exception_body(api: RaritanAPI) -> None:
     """A huge SDK exception body (e.g. a PDU response dump) must be truncated
     before it flows into HA logs via the wrapped RaritanAPIError."""
     huge = "x" * 5000
-    mapped = RaritanAPI._remap(RuntimeError(huge))
+    mapped = api._remap(RuntimeError(huge))
     assert len(str(mapped)) <= 200
+
+
+def test_remap_scrubs_the_host_from_error_text(api: RaritanAPI) -> None:
+    """A TLS hostname-mismatch error echoes the host; it must not survive into
+    the mapped error (which surfaces at WARNING level via UpdateFailed)."""
+    mapped = api._remap(RuntimeError("certificate is not valid for '10.0.0.1'"))
+    assert "10.0.0.1" not in str(mapped)
+    assert "<host>" in str(mapped)
 
 
 # ---------------------------------------------------------------------------
