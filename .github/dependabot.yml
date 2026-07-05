@@ -25,3 +25,4 @@ updates:
       - dependency-name: "pytest-homeassistant-custom-component"
       - dependency-name: "pytest"
       - dependency-name: "pytest-cov"
+      - dependency-name: "pytest-asyncio"
