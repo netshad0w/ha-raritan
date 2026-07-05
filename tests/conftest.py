@@ -8,21 +8,24 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Real SDK imports, used as `spec=` to enforce method/attribute shape so that
-# attribute typos surface in tests instead of in production. Note: the Raritan
-# SDK builds methods dynamically on instances, so we must spec against an actual
-# instance (not the class). We construct throwaway instances with a dummy agent.
+from homeassistant.config_entries import ConfigEntryState
 from raritan.rpc import pdumodel  # type: ignore[import-not-found]
 from raritan.rpc.sensors import (  # type: ignore[import-not-found]
     AccumulatingNumericSensor,
     NumericSensor,
 )
 
+# Real SDK imports, used as `spec=` to enforce method/attribute shape so that
+# attribute typos surface in tests instead of in production. Note: the Raritan
+# SDK builds methods dynamically on instances, so we must spec against an actual
+# instance (not the class). We construct throwaway instances with a dummy agent.
+from custom_components.raritan.const import DOMAIN
 from tests.helpers import make_fake_bulk_helper_class
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import AsyncGenerator
+
+    from homeassistant.core import HomeAssistant
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
@@ -164,8 +167,25 @@ def _make_pdu_metadata(snap: dict[str, Any]) -> MagicMock:
     return md
 
 
+async def _unload_loaded_entries(hass: HomeAssistant) -> None:
+    """Unload loaded raritan entries while the SDK is still patched.
+
+    Fixtures tear down before the ``hass`` fixture stops HA. An entry left
+    loaded lets a coordinator refresh fire during HA shutdown after the SDK
+    patches are gone, hitting the real BulkRequestHelper against MagicMock
+    request objects and leaving a lingering executor thread that trips PHACC's
+    cleanup check.
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 @pytest.fixture
-def mock_raritan(snapshot_4_3_11: dict[str, Any]) -> Generator[MagicMock]:
+async def mock_raritan(
+    hass: HomeAssistant, snapshot_4_3_11: dict[str, Any]
+) -> AsyncGenerator[MagicMock]:
     """Mock the raritan SDK Pdu object using the captured snapshot, with strict spec=."""
     pdu = MagicMock(spec=_PDU_SPEC)
     pdu.getMetaData.return_value = _make_pdu_metadata(snapshot_4_3_11["metadata"])
@@ -191,12 +211,13 @@ def mock_raritan(snapshot_4_3_11: dict[str, Any]) -> Generator[MagicMock]:
     ):
         agent_cls.return_value = MagicMock()
         yield pdu
+        await _unload_loaded_entries(hass)
 
 
 @pytest.fixture
-def mock_raritan_with_outlets(
-    snapshot_4_3_11: dict[str, Any],
-) -> Generator[MagicMock]:
+async def mock_raritan_with_outlets(
+    hass: HomeAssistant, snapshot_4_3_11: dict[str, Any]
+) -> AsyncGenerator[MagicMock]:
     """Variant that simulates an outlet-metered+switchable PDU with 2 outlets."""
     pdu = MagicMock(spec=_PDU_SPEC)
 
@@ -262,6 +283,7 @@ def mock_raritan_with_outlets(
     ):
         agent_cls.return_value = MagicMock()
         yield pdu
+        await _unload_loaded_entries(hass)
 
 
 def _make_alert_snapshot(
