@@ -1,5 +1,5 @@
 homeassistant==2026.7.1
-raritan==4.3.13.52458
+raritan==4.4.0.52884
 # Runtime deps of HA's core `dhcp` component, which our manifest's dhcp
 # matchers pull in. Bundled in real HA installs; pinned here so the dev
 # container / venv can load it and exercise DHCP discovery (versions match
