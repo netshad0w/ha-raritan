@@ -41,25 +41,29 @@ jobs:
         run: |
           python -c "
           import xml.etree.ElementTree as ET
-          tree = ET.parse('coverage.xml')
-          root = tree.getroot()
+          from pathlib import PurePosixPath
+          root = ET.parse('coverage.xml').getroot()
           gates = {
-              'custom_components/raritan/api.py': 95.0,
-              'custom_components/raritan/coordinator.py': 95.0,
-              'custom_components/raritan/config_flow.py': 95.0,
+              'api.py': 95.0,
+              'coordinator.py': 95.0,
+              'config_flow.py': 95.0,
           }
-          failed = []
+          seen = {}
           for cls in root.iter('class'):
-              fname = cls.get('filename', '')
-              for path, target in gates.items():
-                  if fname.endswith(path.split('/')[-1]) and path in fname:
-                      pct = float(cls.get('line-rate', 0)) * 100
-                      if pct < target:
-                          failed.append(f'{fname}: {pct:.1f}% < {target}%')
+              name = PurePosixPath(cls.get('filename', '')).name
+              if name in gates:
+                  seen[name] = float(cls.get('line-rate', 0)) * 100
+          for name, pct in sorted(seen.items()):
+              print(f'{name}: {pct:.1f}% (gate {gates[name]}%)')
+          missing = sorted(gates.keys() - seen.keys())
+          if missing:
+              print('Gated modules absent from coverage.xml:', ', '.join(missing))
+          failed = [f'{n}: {p:.1f}% < {gates[n]}%' for n, p in sorted(seen.items()) if p < gates[n]]
           if failed:
               print('Per-module coverage failures:')
               for f in failed:
                   print(' -', f)
+          if missing or failed:
               raise SystemExit(1)
           print('Per-module coverage gates passed.')
           "
