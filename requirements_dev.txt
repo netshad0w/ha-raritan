@@ -1,15 +1,15 @@
-homeassistant==2026.8.2
+homeassistant==2026.8.3
 raritan==4.3.14.52917
 # Runtime deps of HA's core `dhcp` component, which our manifest's dhcp
 # matchers pull in. Bundled in real HA installs; pinned here so the dev
 # container / venv can load it and exercise DHCP discovery (versions match
-# homeassistant 2026.8.2's dhcp manifest).
+# homeassistant 2026.8.3's dhcp manifest).
 aiodhcpwatcher==1.2.7
 aiodiscover==3.3.2
 cached-ipaddress==1.1.2
 pytest==9.0.3
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
-pytest-homeassistant-custom-component==0.13.356
+pytest-homeassistant-custom-component==0.13.357
 ruff==0.16.4
 mypy==2.3.1
