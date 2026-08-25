@@ -1,6 +1,6 @@
 {
   "name": "Raritan PDU",
   "render_readme": true,
-  "homeassistant": "2026.8.2",
+  "homeassistant": "2026.8.3",
   "country": ["FR", "US"]
 }
