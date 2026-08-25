@@ -10,7 +10,7 @@
 
 ## Compatibility
 
-Tested firmware family: **Xerus 4.3.x**. The Raritan SDK pin in `manifest.json` (`raritan>=4.3.13.52458`) sets the wire-protocol baseline. Older firmware (down to the enforced minimum 4.0.10) is expected to work for read paths; newer firmware (4.4+/5.x) loads but is unverified.
+Tested firmware family: **Xerus 4.3.x**. The Raritan SDK pin in `manifest.json` (`raritan>=4.3.14.52917`) sets the wire-protocol baseline. Older firmware (down to the enforced minimum 4.0.10) is expected to work for read paths; newer firmware (4.4+/5.x) loads but is unverified.
 
 ## Discovery
 
