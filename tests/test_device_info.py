@@ -2,7 +2,7 @@
 
 The sub-device name is what HA prepends to every entity's friendly name, so it
 stays short ("Outlet 3" -> "Outlet 3 Active power"). The owning PDU is conveyed
-by ``via_device`` (UI nesting) and ``serial_number`` (info box), not a prefix,
+by ``via_device_id`` (UI nesting) and ``serial_number`` (info box), not a prefix,
 which is what keeps several PDUs apart without bloating every entity name.
 """
 
@@ -20,6 +20,8 @@ from custom_components.raritan.device_info import (
 )
 from custom_components.raritan.models import CapabilityMatrix
 
+_PDU_DEVICE_ID = "3f2ab1c0de4f11ef9a7b0242ac120002"
+
 _CAP = CapabilityMatrix(
     model="PX3-5487V-N2",
     firmware="4.0.30",
@@ -36,39 +38,39 @@ _CAP = CapabilityMatrix(
 
 
 def test_outlet_name_is_bare_with_serial() -> None:
-    info = outlet_device_info(_CAP, 3)
+    info = outlet_device_info(_CAP, 3, via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "Outlet 3"
     assert info["serial_number"] == "0A00000000"
-    assert info["via_device"] == (DOMAIN, "0A00000000")
+    assert info["via_device_id"] == _PDU_DEVICE_ID
     assert (DOMAIN, "0A00000000_outlet_3") in info["identifiers"]
 
 
 def test_ocp_name_is_bare_with_serial() -> None:
-    info = ocp_device_info(_CAP, 1)
+    info = ocp_device_info(_CAP, 1, via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "OCP 1"
     assert info["serial_number"] == "0A00000000"
-    assert info["via_device"] == (DOMAIN, "0A00000000")
+    assert info["via_device_id"] == _PDU_DEVICE_ID
 
 
 def test_multi_inlet_name_is_bare_with_serial() -> None:
-    info = inlet_device_info(_CAP, 2, "10.0.0.1")
+    info = inlet_device_info(_CAP, 2, "10.0.0.1", via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "Inlet 2"
     assert info["serial_number"] == "0A00000000"
-    assert info["via_device"] == (DOMAIN, "0A00000000")
+    assert info["via_device_id"] == _PDU_DEVICE_ID
 
 
 def test_multi_psu_name_is_bare_with_serial() -> None:
-    info = psu_device_info(_CAP, 1)
+    info = psu_device_info(_CAP, 1, via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "PSU 1"
     assert info["serial_number"] == "0A00000000"
-    assert info["via_device"] == (DOMAIN, "0A00000000")
+    assert info["via_device_id"] == _PDU_DEVICE_ID
 
 
 def test_env_name_is_the_label_with_serial() -> None:
-    info = env_device_info(_CAP, "AA_BB", "Rack top")
+    info = env_device_info(_CAP, "AA_BB", "Rack top", via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "Rack top"
     assert info["serial_number"] == "0A00000000"
-    assert info["via_device"] == (DOMAIN, "0A00000000")
+    assert info["via_device_id"] == _PDU_DEVICE_ID
 
 
 def test_single_psu_stays_on_pdu_device() -> None:
@@ -86,9 +88,9 @@ def test_single_psu_stays_on_pdu_device() -> None:
         outlet_metering=True,
         nb_psu=1,
     )
-    info = psu_device_info(cap, 1)
+    info = psu_device_info(cap, 1, via_device_id=_PDU_DEVICE_ID)
     assert info["identifiers"] == {(DOMAIN, "0A00000000")}
-    assert "via_device" not in info
+    assert "via_device_id" not in info
     assert "name" not in info
 
 
@@ -116,7 +118,7 @@ def test_single_inlet_stays_on_pdu_device() -> None:
         outlet_switching=True,
         outlet_metering=True,
     )
-    info = inlet_device_info(cap, 1, "10.0.0.1")
+    info = inlet_device_info(cap, 1, "10.0.0.1", via_device_id=_PDU_DEVICE_ID)
     assert info["name"] == "Raritan PX3-5487V-N2 (0A00000000)"
     assert (DOMAIN, "0A00000000") in info["identifiers"]
-    assert "via_device" not in info
+    assert "via_device_id" not in info

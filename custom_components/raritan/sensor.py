@@ -330,7 +330,9 @@ class RaritanInletSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sens
             # becomes "..._inlet_idx_voltage" (literal "idx"). Explicitly
             # pre-resolve the slug so the entity_id reads as "..._inlet_1_voltage".
             self._attr_suggested_object_id = f"inlet_{inlet_idx}_{description.key}"
-        self._attr_device_info = inlet_device_info(cap, inlet_idx, coordinator.host)
+        self._attr_device_info = inlet_device_info(
+            cap, inlet_idx, coordinator.host, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def native_value(self) -> float | None:
@@ -365,7 +367,9 @@ class RaritanOutletSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sen
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_{description.key}"
         # No translation_placeholders: the parent device name "Outlet {idx}"
         # already carries the index, so the entity name is just the metric.
-        self._attr_device_info = outlet_device_info(cap, outlet_idx)
+        self._attr_device_info = outlet_device_info(
+            cap, outlet_idx, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def native_value(self) -> float | None:
@@ -398,7 +402,9 @@ class RaritanOcpSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sensor
         self._ocp_idx = ocp_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_ocp_{ocp_idx}_{description.key}"
-        self._attr_device_info = ocp_device_info(cap, ocp_idx)
+        self._attr_device_info = ocp_device_info(
+            cap, ocp_idx, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def native_value(self) -> float | None:
@@ -437,7 +443,9 @@ class RaritanEnvSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], Sensor
             self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit or _ENV_NUMERIC_DEFAULT_UNIT.get(sensor_type)
         self._attr_name = env_display_name(sensor_type)
-        self._attr_device_info = env_device_info(cap, safe, label)
+        self._attr_device_info = env_device_info(
+            cap, safe, label, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def native_value(self) -> float | None:

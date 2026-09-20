@@ -265,7 +265,7 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
         if d.via_device_id == pdu_dev.id and any("_inlet_" in i for _, i in d.identifiers)
     ]
     assert len(inlet_devs) == 2
-    # Bare names; the PDU is carried by via_device + serial_number, not a prefix.
+    # Bare names; the PDU is carried by via_device_id + serial_number, not a prefix.
     inlet_names = sorted(d.name or "" for d in inlet_devs)
     assert inlet_names == ["Inlet 1", "Inlet 2"]
     assert all(d.serial_number == "TEST00000001" for d in inlet_devs)
@@ -281,7 +281,7 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
 async def test_outlet_sensors_have_sub_device_hierarchy(
     hass: HomeAssistant, mock_raritan_with_outlets: MagicMock
 ) -> None:
-    """Each outlet should be a sub-device of the PDU (linked via via_device)."""
+    """Each outlet should be a sub-device of the PDU (linked by via_device_id)."""
     from homeassistant.helpers import device_registry as dr
 
     result = await hass.config_entries.flow.async_init(

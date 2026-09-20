@@ -111,7 +111,9 @@ class RaritanOcpTrippedSensor(
         self._ocp_idx = ocp_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_ocp_{ocp_idx}_tripped"
-        self._attr_device_info = ocp_device_info(cap, ocp_idx)
+        self._attr_device_info = ocp_device_info(
+            cap, ocp_idx, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -140,7 +142,9 @@ class RaritanPsuHealthSensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], 
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_psu_{psu_idx}_health"
         self._attr_translation_placeholders = {"idx": str(psu_idx)}
-        self._attr_device_info = psu_device_info(cap, psu_idx)
+        self._attr_device_info = psu_device_info(
+            cap, psu_idx, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -177,7 +181,9 @@ class RaritanEnvBinarySensor(CoordinatorEntity["RaritanDataUpdateCoordinator"], 
         if device_class is not None:
             self._attr_device_class = device_class
         self._attr_name = env_display_name(sensor_type)
-        self._attr_device_info = env_device_info(cap, safe, label)
+        self._attr_device_info = env_device_info(
+            cap, safe, label, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def is_on(self) -> bool | None:

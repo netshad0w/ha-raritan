@@ -122,15 +122,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
 
     # Register the parent PDU device explicitly. With multi-inlet PDUs no
     # entity DeviceInfo identifies the PDU as itself (every entity goes to a
-    # sub-device), so the via_device chain has no anchor unless we declare
+    # sub-device), so the sub-device chain has no anchor unless we declare
     # the parent here. For single-inlet PDUs the inlet sensor's DeviceInfo
     # already points at the PDU directly, so this is a no-op repeat.
+    # Its registry id is what every sub-device hangs its via_device_id off,
+    # so it has to exist before the platforms are forwarded.
     connections = (
         {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(capabilities.mac))}
         if capabilities.mac
         else set()
     )
-    dr.async_get(hass).async_get_or_create(
+    pdu_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, capabilities.serial)},
         connections=connections,
@@ -141,6 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RaritanConfigEntry) -> b
         hw_version=capabilities.hw_revision,
         configuration_url=f"https://{entry.data[CONF_HOST]}/",
     )
+    coordinator.anchor_device_id = pdu_device.id
 
     entry.runtime_data = RaritanRuntimeData(
         api=api,

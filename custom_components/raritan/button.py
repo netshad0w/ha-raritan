@@ -86,7 +86,11 @@ class RaritanOutletCycleButton(ButtonEntity):
         self._outlet_idx = outlet_idx
         cap = entry.runtime_data.capabilities
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_cycle"
-        self._attr_device_info = outlet_device_info(cap, outlet_idx)
+        self._attr_device_info = outlet_device_info(
+            cap,
+            outlet_idx,
+            via_device_id=entry.runtime_data.coordinator.anchor_device_id,
+        )
 
     async def async_press(self) -> None:
         """Power-cycle the outlet."""

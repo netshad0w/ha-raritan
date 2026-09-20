@@ -35,6 +35,14 @@ _LOGGER = logging.getLogger(__name__)
 class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
     """Polls one PDU at a fixed interval, serializing executor jobs via a lock."""
 
+    anchor_device_id: str
+    """Device registry id of the parent PDU device.
+
+    Assigned by the entry setup once that device exists, which is before the
+    platforms are forwarded, so every sub-device builder can hang its
+    ``via_device_id`` off it.
+    """
+
     def __init__(
         self,
         *,

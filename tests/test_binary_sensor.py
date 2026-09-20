@@ -108,7 +108,7 @@ async def test_ocp_tripped_state_reflects_tripped_breaker(
 
 
 async def test_ocp_sub_device_hierarchy(hass: HomeAssistant, mock_raritan: MagicMock) -> None:
-    """Each OCP must be a sub-device of the PDU (linked via via_device)."""
+    """Each OCP must be a sub-device of the PDU (linked by via_device_id)."""
     from homeassistant.helpers import device_registry as dr
 
     # Set up basic OCP sensor mocks

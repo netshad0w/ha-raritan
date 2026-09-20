@@ -61,7 +61,9 @@ class RaritanOutletSwitch(CoordinatorEntity["RaritanDataUpdateCoordinator"], Swi
         self._outlet_idx = outlet_idx
         cap = coordinator.capabilities
         self._attr_unique_id = f"{cap.serial}_outlet_{outlet_idx}_switch"
-        self._attr_device_info = outlet_device_info(cap, outlet_idx)
+        self._attr_device_info = outlet_device_info(
+            cap, outlet_idx, via_device_id=coordinator.anchor_device_id
+        )
 
     @property
     def is_on(self) -> bool | None:
