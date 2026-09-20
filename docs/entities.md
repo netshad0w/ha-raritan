@@ -40,6 +40,8 @@ Peripherals are hot-plug aware: the coordinator re-scans periodically, so attach
 
 Both bus events carry the PDU `serial` and the config `entry_id`, so automations can target a specific PDU.
 
+The `event` entities hold their last value through a failed poll, so a state trigger on them only ever sees a real event. Their diff baseline is kept across restarts too: an alert that appeared, or an outlet that moved, while Home Assistant was down is reported once it comes back. An alert that both appeared and cleared during the downtime is not replayed.
+
 ## Services
 
 - `cycle_outlet`: power-cycle a single outlet.
@@ -49,6 +51,7 @@ Both bus events carry the PDU `serial` and the config `entry_id`, so automations
 ## How it polls
 
 - A single `DataUpdateCoordinator` polls every 5 s by default (configurable via the options flow, 2-300 s).
+- A failing poll keeps serving the last payload for 15 s before it reaches the entities, so a dropped request does not turn ~200 entities `unavailable` on a network hiccup. Past that the entities go `unavailable` as usual.
 - All sensor reads are batched through `BulkRequestHelper`: one HTTP round-trip per tick, even on a 24-outlet PDU.
 - Credential rotation triggers an HA reauthentication banner; the new identity is verified by serial number to prevent a silent device swap.
 - Repair issues are raised for: TLS verification disabled, firmware below the minimum, and extended unreachability.

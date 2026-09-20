@@ -20,7 +20,7 @@ Full reference: [docs/entities.md](docs/entities.md).
 
 ## Requirements
 
-- Home Assistant **2026.5.4** or later (Python 3.14, managed by HA).
+- Home Assistant **2026.9.3** or later (Python 3.14, managed by HA).
 - Network reachability from HA to the PDU over **HTTPS** (port 443; HTTP works but raises a repair issue).
 - A PDU account. Read-only access covers metering; switching, alerts, and energy resets need extra role permissions (see [docs/permissions.md](docs/permissions.md)).
 
