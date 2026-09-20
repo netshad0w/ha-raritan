@@ -37,10 +37,28 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class RaritanAlertEvent(CoordinatorEntity["RaritanDataUpdateCoordinator"], EventEntity):
-    """Pdu-level alarm event entity. Triggered when a new alert appears."""
+class _RaritanEventEntity(CoordinatorEntity["RaritanDataUpdateCoordinator"], EventEntity):
+    """Shared behaviour for the PDU's event entities."""
 
     _attr_has_entity_name = True
+
+    @property
+    def available(self) -> bool:
+        """Stay available for as long as the config entry is loaded.
+
+        CoordinatorEntity ties availability to the last poll, which for an
+        event entity asserts something untrue: a dropped request does not
+        unmake the last event received, and the integration proves it still
+        knows the value by rendering it again on recovery. The flip back is
+        what consumers trip over. A state trigger cannot tell ``unavailable``
+        followed by a timestamp apart from a fresh event.
+        """
+        return True
+
+
+class RaritanAlertEvent(_RaritanEventEntity):
+    """Pdu-level alarm event entity. Triggered when a new alert appears."""
+
     _attr_translation_key = "alert"
     # EventEntity declares _attr_event_types as a plain instance var, so the
     # ClassVar annotation RUF012 asks for is rejected by mypy (override error).
@@ -86,10 +104,9 @@ class RaritanAlertEvent(CoordinatorEntity["RaritanDataUpdateCoordinator"], Event
         super()._handle_coordinator_update()
 
 
-class RaritanOutletStateChangeEvent(CoordinatorEntity["RaritanDataUpdateCoordinator"], EventEntity):
+class RaritanOutletStateChangeEvent(_RaritanEventEntity):
     """Per-outlet state-change event entity."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "state_change"
     _attr_event_types = ["turned_on", "turned_off"]  # noqa: RUF012
 

@@ -191,3 +191,57 @@ async def test_alert_event_fires_cleared_when_alert_disappears(
     ]
     cleared = [s for s in states if s.attributes.get("event_type") == "alert_cleared"]
     assert len(cleared) >= 1
+
+
+def _event_states(hass: HomeAssistant, needle: str) -> dict[str, str]:
+    return {
+        s.entity_id: s.state
+        for s in hass.states.async_all()
+        if s.entity_id.startswith("event.") and needle in s.entity_id
+    }
+
+
+async def test_event_entities_stay_available_when_a_poll_fails(
+    hass: HomeAssistant, mock_raritan_with_outlets: MagicMock
+) -> None:
+    """A failed poll must leave the event entities' state and availability alone.
+
+    Following the coordinator makes them flip to unavailable and back, and the
+    flip back re-renders the retained timestamp, which a state trigger cannot
+    tell apart from a fresh event.
+    """
+    from custom_components.raritan.api import RaritanConnectionError
+
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    before = _event_states(hass, "")
+    assert before
+
+    entry.runtime_data.api.fetch_telemetry = MagicMock(
+        side_effect=RaritanConnectionError("unreachable")
+    )
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.coordinator.last_update_success is False
+    assert _event_states(hass, "") == before
+
+
+async def test_sensors_still_go_unavailable_when_a_poll_fails(
+    hass: HomeAssistant, mock_raritan_with_outlets: MagicMock
+) -> None:
+    """The availability override is scoped to event: a stale reading is unknown."""
+    from custom_components.raritan.api import RaritanConnectionError
+
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+
+    entry.runtime_data.api.fetch_telemetry = MagicMock(
+        side_effect=RaritanConnectionError("unreachable")
+    )
+    await entry.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    sensors = [s for s in hass.states.async_all() if s.entity_id.startswith("sensor.")]
+    assert sensors
+    assert all(s.state == "unavailable" for s in sensors)
