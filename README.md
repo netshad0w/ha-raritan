@@ -16,13 +16,13 @@ Verified end-to-end on a **PX3-5487V-N2** (24 outlets, ~200 entities). A steady-
 - **Services**: `cycle_outlet`, `set_outlet_state`, `reset_energy_counter`.
 - DHCP discovery, reauth on credential rotation, anonymized diagnostics, English and French.
 
-Full reference: [docs/entities.md](docs/entities.md).
+Full reference: [docs/ENTITIES.md](docs/ENTITIES.md).
 
 ## Requirements
 
 - Home Assistant **2026.9.3** or later (Python 3.14, managed by HA).
 - Network reachability from HA to the PDU over **HTTPS** (port 443; HTTP works but raises a repair issue).
-- A PDU account. Read-only access covers metering; switching, alerts, and energy resets need extra role permissions (see [docs/permissions.md](docs/permissions.md)).
+- A PDU account. Read-only access covers metering; switching, alerts, and energy resets need extra role permissions (see [docs/PERMISSIONS.md](docs/PERMISSIONS.md)).
 
 ## Installation
 
@@ -45,11 +45,11 @@ To change the host, credentials, or TLS later, use **Reconfigure**. It re-probes
 
 ## Documentation
 
-- [Entities & services](docs/entities.md): every entity, event, and service, plus how the coordinator polls.
-- [PDU role & permissions](docs/permissions.md): least-privilege role setup and the exact Xerus labels.
-- [Automation examples](docs/automations.md): energy tracking, power-cycling, load shedding.
-- [Troubleshooting & compatibility](docs/troubleshooting.md): common issues, firmware support, DHCP discovery, removing the integration.
-- [Contributing & hardware reports](docs/contributing.md): help cover more PDU models.
+- [Entities & services](docs/ENTITIES.md): every entity, event, and service, plus how the coordinator polls.
+- [PDU role & permissions](docs/PERMISSIONS.md): least-privilege role setup and the exact Xerus labels.
+- [Automation examples](docs/AUTOMATIONS.md): energy tracking, power-cycling, load shedding.
+- [Troubleshooting & compatibility](docs/TROUBLESHOOTING.md): common issues, firmware support, DHCP discovery, removing the integration.
+- [Contributing & hardware reports](docs/CONTRIBUTING.md): help cover more PDU models.
 
 ## License
 

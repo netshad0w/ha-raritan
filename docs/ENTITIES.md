@@ -46,7 +46,7 @@ The `event` entities hold their last value through a failed poll, so a state tri
 
 - `cycle_outlet`: power-cycle a single outlet.
 - `set_outlet_state`: turn an outlet on or off (idempotent).
-- `reset_energy_counter`: reset the cumulative energy counter on an inlet or outlet (requires the PDU role permission **Administrator Privileges**; see [permissions](permissions.md)).
+- `reset_energy_counter`: reset the cumulative energy counter on an inlet or outlet (requires the PDU role permission **Administrator Privileges**; see [permissions](PERMISSIONS.md)).
 
 ## How it polls
 
