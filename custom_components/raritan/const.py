@@ -37,6 +37,11 @@ MIN_FIRMWARE_VERSION: Final = (4, 0, 10)
 
 # Coordinator behavior
 TICK_OVERLAP_THRESHOLD: Final = 3  # consecutive skips before UpdateFailed
+# How long a failing streak may keep serving the last payload. Bound in
+# seconds rather than in ticks: scan_interval runs from 2 s to 300 s, so a
+# tick count would put the staleness anywhere between 6 s and a quarter of
+# an hour for the same setting.
+TRANSIENT_FAILURE_GRACE: Final = 15  # seconds
 UNREACHABLE_REPAIR_THRESHOLD: Final = 30 * 60  # seconds before "extended unreachable" repair
 # Ticks between hot-plug peripheral re-scans. The peripheral-slot walk is a
 # heavy call (~17 s on a fully-populated 24-outlet PX3, measured E2E), so it

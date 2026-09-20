@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 from homeassistant import config_entries
@@ -13,6 +13,7 @@ from custom_components.raritan.const import (
     CONF_USERNAME,
     CONF_VERIFY_TLS,
     DOMAIN,
+    TRANSIENT_FAILURE_GRACE,
 )
 
 if TYPE_CHECKING:
@@ -211,6 +212,14 @@ def _alerted_sensor(target: str = "/model/pdu/0/inlet/0/sensors/current") -> Mag
     return sd
 
 
+async def _fail_past_the_grace(hass: HomeAssistant, coordinator: Any) -> None:
+    """Poll twice with the streak aged past the grace, so the failure surfaces."""
+    await coordinator.async_refresh()
+    coordinator._unreachable_since = hass.loop.time() - TRANSIENT_FAILURE_GRACE
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+
 def _event_states(hass: HomeAssistant, needle: str) -> dict[str, str]:
     return {
         s.entity_id: s.state
@@ -235,13 +244,13 @@ async def test_event_entities_stay_available_when_a_poll_fails(
     before = _event_states(hass, "")
     assert before
 
+    coordinator = entry.runtime_data.coordinator
     entry.runtime_data.api.fetch_telemetry = MagicMock(
         side_effect=RaritanConnectionError("unreachable")
     )
-    await entry.runtime_data.coordinator.async_refresh()
-    await hass.async_block_till_done()
+    await _fail_past_the_grace(hass, coordinator)
 
-    assert entry.runtime_data.coordinator.last_update_success is False
+    assert coordinator.last_update_success is False
     assert _event_states(hass, "") == before
 
 
@@ -257,8 +266,7 @@ async def test_sensors_still_go_unavailable_when_a_poll_fails(
     entry.runtime_data.api.fetch_telemetry = MagicMock(
         side_effect=RaritanConnectionError("unreachable")
     )
-    await entry.runtime_data.coordinator.async_refresh()
-    await hass.async_block_till_done()
+    await _fail_past_the_grace(hass, entry.runtime_data.coordinator)
 
     sensors = [s for s in hass.states.async_all() if s.entity_id.startswith("sensor.")]
     assert sensors

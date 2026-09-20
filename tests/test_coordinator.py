@@ -18,6 +18,7 @@ from custom_components.raritan.const import (
     DOMAIN,
     ISSUE_UNREACHABLE_EXTENDED,
     TICK_OVERLAP_THRESHOLD,
+    TRANSIENT_FAILURE_GRACE,
     UNREACHABLE_REPAIR_THRESHOLD,
 )
 from custom_components.raritan.coordinator import RaritanDataUpdateCoordinator
@@ -929,3 +930,66 @@ def _fake_payload_with_serial(_serial: str) -> CoordinatorPayload:
         last_tick_duration_ms=0,
         consecutive_skips=0,
     )
+
+
+def _failing_coordinator(hass: HomeAssistant, capability: CapabilityMatrix):
+    """A coordinator with one good payload behind it and a dead api in front."""
+    api = MagicMock()
+    api.host = "10.0.0.1"
+    api.fetch_alerts.return_value = []
+    api.fetch_telemetry.return_value = _payload_with_alerts([])
+    return RaritanDataUpdateCoordinator(
+        hass=hass,
+        config_entry=MockConfigEntry(domain=DOMAIN, entry_id="ENTRY1"),
+        api=api,
+        capabilities=capability,
+        scan_interval=5,
+    ), api
+
+
+async def test_dropped_poll_inside_the_grace_serves_the_last_payload(
+    hass: HomeAssistant, capability: CapabilityMatrix
+) -> None:
+    """A momentary failure must leave every entity on its last known value."""
+    coord, api = _failing_coordinator(hass, capability)
+    await coord.async_refresh()
+    good = coord.data
+    assert good is not None
+
+    api.fetch_telemetry.side_effect = RaritanConnectionError("unreachable")
+    await coord.async_refresh()
+
+    assert coord.last_update_success is True
+    assert coord.data is good
+
+
+async def test_failing_streak_past_the_grace_surfaces(
+    hass: HomeAssistant, capability: CapabilityMatrix
+) -> None:
+    """Once the streak outlives the grace, the failure reaches the entities."""
+    coord, api = _failing_coordinator(hass, capability)
+    await coord.async_refresh()
+
+    api.fetch_telemetry.side_effect = RaritanConnectionError("unreachable")
+    await coord.async_refresh()
+    coord._unreachable_since = hass.loop.time() - TRANSIENT_FAILURE_GRACE
+    await coord.async_refresh()
+
+    assert coord.last_update_success is False
+
+
+async def test_grace_restarts_after_the_pdu_comes_back(
+    hass: HomeAssistant, capability: CapabilityMatrix
+) -> None:
+    """A recovery clears the streak, so the next blip gets a fresh grace window."""
+    coord, api = _failing_coordinator(hass, capability)
+    await coord.async_refresh()
+
+    api.fetch_telemetry.side_effect = RaritanConnectionError("unreachable")
+    await coord.async_refresh()
+    assert coord._unreachable_since is not None
+
+    api.fetch_telemetry.side_effect = None
+    await coord.async_refresh()
+    assert coord._unreachable_since is None
+    assert coord.last_update_success is True

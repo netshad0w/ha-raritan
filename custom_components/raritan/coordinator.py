@@ -17,6 +17,7 @@ from .const import (
     EVENT_TYPE_ALERT,
     EVENT_TYPE_OUTLET_STATE_CHANGED,
     TICK_OVERLAP_THRESHOLD,
+    TRANSIENT_FAILURE_GRACE,
     UNREACHABLE_REPAIR_THRESHOLD,
 )
 from .models import AlertSnapshot, CoordinatorPayload
@@ -204,7 +205,17 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
             except RaritanAuthError as exc:
                 raise ConfigEntryAuthFailed(str(exc)) from exc
             except RaritanAPIError as exc:
-                self._note_unreachable()
+                streak = self._note_unreachable()
+                if self.data is not None and streak < TRANSIENT_FAILURE_GRACE:
+                    # A dropped request is not yet an unreachable PDU. Serving
+                    # the last payload keeps every entity on its last known
+                    # value instead of flipping ~200 of them on a hiccup.
+                    _LOGGER.debug(
+                        "Poll failed on entry %s, still inside the grace window: %s",
+                        self._entry_id,
+                        str(exc)[:200],
+                    )
+                    return self.data
                 raise UpdateFailed(str(exc)) from exc
             self._consecutive_skips = 0
             self._note_reachable()
@@ -221,15 +232,17 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
             self._previous_alerts = list(current_alerts)
             return payload
 
-    def _note_unreachable(self) -> None:
+    def _note_unreachable(self) -> float:
         """Track an unreachable streak and raise the repair once it crosses
         the threshold. Re-issued each failing tick (``async_create_issue`` is
         idempotent on the issue_id) so the "for N minutes" text stays current.
+        Returns how long the streak has been running, which is what decides
+        whether this tick is still inside the grace window.
         """
         now = self.hass.loop.time()
         if self._unreachable_since is None:
             self._unreachable_since = now
-            return
+            return 0.0
         elapsed = now - self._unreachable_since
         if elapsed >= UNREACHABLE_REPAIR_THRESHOLD:
             create_unreachable_issue(
@@ -238,6 +251,7 @@ class RaritanDataUpdateCoordinator(DataUpdateCoordinator[CoordinatorPayload]):
                 host=self._api.host,
                 minutes=int(elapsed // 60),
             )
+        return elapsed
 
     def _note_reachable(self) -> None:
         """Clear an active unreachable streak after a successful tick."""
