@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.event import EventEntity
+from homeassistant.components.event import EventEntity, EventExtraStoredData
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 
     from . import RaritanConfigEntry
     from .coordinator import RaritanDataUpdateCoordinator
+    from .models import OutletReading
 
 PARALLEL_UPDATES = 0
 
@@ -37,8 +39,26 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+@dataclass
+class _RaritanEventExtraStoredData(EventExtraStoredData):
+    """The last event EventEntity already stores, plus the diff baseline.
+
+    The baseline rides in the same record so that a restart diffs its first
+    payload against what was last actually known. Reseeding from the present
+    instead folds whatever the PDU did while we were down into the new
+    baseline, and none of it is ever reported.
+    """
+
+    baseline: Any = None
+
+
 class _RaritanEventEntity(CoordinatorEntity["RaritanDataUpdateCoordinator"], EventEntity):
-    """Shared behaviour for the PDU's event entities."""
+    """Shared availability and restore behaviour for the PDU's event entities.
+
+    Both entities report "the last event received" and diff each payload
+    against the one before it, so they need the diff baseline to outlive a
+    restart and their state to outlive a failed poll.
+    """
 
     _attr_has_entity_name = True
 
@@ -54,6 +74,13 @@ class _RaritanEventEntity(CoordinatorEntity["RaritanDataUpdateCoordinator"], Eve
         followed by a timestamp apart from a fresh event.
         """
         return True
+
+    async def _restored_baseline(self) -> Any:
+        """The baseline the previous run left behind, or None on a first start."""
+        restored = await self.async_get_last_extra_data()
+        if restored is None:
+            return None
+        return restored.as_dict().get("baseline")
 
 
 class RaritanAlertEvent(_RaritanEventEntity):
@@ -71,24 +98,39 @@ class RaritanAlertEvent(_RaritanEventEntity):
         self._previous_ids: set[str] | None = None
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, cap.serial)})
 
-    async def async_added_to_hass(self) -> None:
-        """Seed previous-ids from current data so the first real update can diff."""
-        await super().async_added_to_hass()
-        if self.coordinator.data is not None:
-            self._previous_ids = {a.sensor_id for a in self.coordinator.data.current_alerts}
+    @property
+    def extra_restore_state_data(self) -> _RaritanEventExtraStoredData:
+        """Store the set of alerts that was active when we were last running."""
+        stored = super().extra_restore_state_data
+        baseline = sorted(self._previous_ids) if self._previous_ids is not None else None
+        return _RaritanEventExtraStoredData(
+            stored.last_event_type, stored.last_event_attributes, baseline
+        )
 
-    def _handle_coordinator_update(self) -> None:
-        if self.coordinator.data is None:
+    async def async_added_to_hass(self) -> None:
+        """Pick up the baseline left by the previous run, or seed a new one."""
+        await super().async_added_to_hass()
+        baseline = await self._restored_baseline()
+        if baseline is None:
+            self._previous_ids = self._current_ids()
             return
-        if self._previous_ids is None:
-            self._previous_ids = {a.sensor_id for a in self.coordinator.data.current_alerts}
-            super()._handle_coordinator_update()
+        self._previous_ids = set(baseline)
+        # Whatever the PDU did while we were down shows up as a diff between
+        # the restored baseline and the payload waiting for us now.
+        self._emit_diff()
+
+    def _current_ids(self) -> set[str]:
+        data = self.coordinator.data
+        return {a.sensor_id for a in data.current_alerts} if data is not None else set()
+
+    def _emit_diff(self) -> None:
+        """Fire one event per alert that appeared or cleared since the baseline."""
+        data = self.coordinator.data
+        if data is None or self._previous_ids is None:
             return
-        current_ids = {a.sensor_id for a in self.coordinator.data.current_alerts}
-        new_ids = current_ids - self._previous_ids
-        cleared_ids = self._previous_ids - current_ids
-        for sid in new_ids:
-            alert = next(a for a in self.coordinator.data.current_alerts if a.sensor_id == sid)
+        current_ids = {a.sensor_id for a in data.current_alerts}
+        for sid in current_ids - self._previous_ids:
+            alert = next(a for a in data.current_alerts if a.sensor_id == sid)
             self._trigger_event(
                 "alert_active",
                 {
@@ -98,9 +140,14 @@ class RaritanAlertEvent(_RaritanEventEntity):
                     "sensor_id": alert.sensor_id,
                 },
             )
-        for sid in cleared_ids:
+        for sid in self._previous_ids - current_ids:
             self._trigger_event("alert_cleared", {"sensor_id": sid})
         self._previous_ids = current_ids
+
+    def _handle_coordinator_update(self) -> None:
+        if self.coordinator.data is None:
+            return
+        self._emit_diff()
         super()._handle_coordinator_update()
 
 
@@ -120,24 +167,46 @@ class RaritanOutletStateChangeEvent(_RaritanEventEntity):
             identifiers={(DOMAIN, f"{cap.serial}_outlet_{outlet_idx}")},
         )
 
+    @property
+    def extra_restore_state_data(self) -> _RaritanEventExtraStoredData:
+        """Store the position the outlet was in when we were last running."""
+        stored = super().extra_restore_state_data
+        return _RaritanEventExtraStoredData(
+            stored.last_event_type, stored.last_event_attributes, self._previous_on
+        )
+
     async def async_added_to_hass(self) -> None:
-        """Seed _previous_on from current data so the next update can diff."""
+        """Pick up the baseline left by the previous run, or seed a new one."""
         await super().async_added_to_hass()
-        if self.coordinator.data is None:
+        baseline = await self._restored_baseline()
+        if baseline is None:
+            outlet = self._current_outlet()
+            if outlet is not None:
+                self._previous_on = outlet.on
             return
-        outlet = self.coordinator.data.outlets_by_idx.get(self._outlet_idx)
-        if outlet is not None:
-            self._previous_on = outlet.on
+        self._previous_on = bool(baseline)
+        # A flip that happened while we were down is the difference between
+        # the restored baseline and the payload waiting for us now.
+        self._emit_diff()
+
+    def _current_outlet(self) -> OutletReading | None:
+        data = self.coordinator.data
+        return data.outlets_by_idx.get(self._outlet_idx) if data is not None else None
+
+    def _emit_diff(self) -> None:
+        """Fire a state-change event if the outlet moved since the baseline."""
+        outlet = self._current_outlet()
+        if outlet is None:
+            return
+        if self._previous_on is not None and self._previous_on != outlet.on:
+            self._trigger_event(
+                "turned_on" if outlet.on else "turned_off",
+                {"outlet_idx": outlet.idx, "label": outlet.label},
+            )
+        self._previous_on = outlet.on
 
     def _handle_coordinator_update(self) -> None:
         if self.coordinator.data is None:
             return
-        outlet = self.coordinator.data.outlets_by_idx.get(self._outlet_idx)
-        if outlet is not None:
-            if self._previous_on is not None and self._previous_on != outlet.on:
-                self._trigger_event(
-                    "turned_on" if outlet.on else "turned_off",
-                    {"outlet_idx": outlet.idx, "label": outlet.label},
-                )
-            self._previous_on = outlet.on
+        self._emit_diff()
         super()._handle_coordinator_update()

@@ -193,6 +193,24 @@ async def test_alert_event_fires_cleared_when_alert_disappears(
     assert len(cleared) >= 1
 
 
+def _alerted_sensor(target: str = "/model/pdu/0/inlet/0/sensors/current") -> MagicMock:
+    """Build an AlertedSensorManager entry the api layer can map to a snapshot."""
+    sd = MagicMock()
+    sensor = MagicMock()
+    sensor.target = target
+    md = MagicMock()
+    md.name = "RMS Current"
+    sensor.getMetaData.return_value = md
+    parent = MagicMock()
+    parent.target = "/model/pdu/0/inlet/0"
+    state = MagicMock()
+    state.name = "CRITICAL"
+    sd.sensor = sensor
+    sd.parent = parent
+    sd.alertState = state
+    return sd
+
+
 def _event_states(hass: HomeAssistant, needle: str) -> dict[str, str]:
     return {
         s.entity_id: s.state
@@ -245,3 +263,83 @@ async def test_sensors_still_go_unavailable_when_a_poll_fails(
     sensors = [s for s in hass.states.async_all() if s.entity_id.startswith("sensor.")]
     assert sensors
     assert all(s.state == "unavailable" for s in sensors)
+
+
+async def test_alert_raised_while_down_surfaces_after_a_reload(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """An alert that appears while HA is down must not be folded into the baseline."""
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    mgr = mock_raritan.getAlertedSensorManager.return_value
+
+    mgr.getAlertedSensors.return_value = [_alerted_sensor()]
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    states = _event_states(hass, "alert")
+    assert states
+    entity_id = next(iter(states))
+    assert hass.states.get(entity_id).attributes.get("event_type") == "alert_active"
+
+
+async def test_alert_cleared_while_down_surfaces_after_a_reload(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """An alert that clears while HA is down must still produce alert_cleared."""
+    mgr = mock_raritan.getAlertedSensorManager.return_value
+    mgr.getAlertedSensors.return_value = [_alerted_sensor()]
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+
+    mgr.getAlertedSensors.return_value = []
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = next(iter(_event_states(hass, "alert")))
+    assert hass.states.get(entity_id).attributes.get("event_type") == "alert_cleared"
+
+
+async def test_alert_that_came_and_went_while_down_is_not_reported(
+    hass: HomeAssistant, mock_raritan: MagicMock
+) -> None:
+    """The restored baseline reports what changed between two known points.
+
+    An alert that both appeared and cleared during the outage leaves those
+    two points identical, so nothing fires. That suppression is deliberate:
+    replaying an alert the user can no longer act on would be noise.
+    """
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = next(iter(_event_states(hass, "alert")))
+    assert hass.states.get(entity_id).state == "unknown"
+
+
+async def test_outlet_flipped_while_down_surfaces_after_a_reload(
+    hass: HomeAssistant, mock_raritan_with_outlets: MagicMock
+) -> None:
+    """An outlet switched while HA is down must produce its state-change event."""
+    from raritan.rpc import pdumodel
+
+    await _setup(hass)
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+
+    outlet_2 = mock_raritan_with_outlets.getOutlets.return_value[1]
+    state = MagicMock()
+    state.available = True
+    state.powerState = pdumodel.Outlet.PowerState.PS_ON
+    outlet_2.getState.return_value = state
+
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    triggered = [
+        s
+        for s in hass.states.async_all()
+        if "state_change" in s.entity_id and s.attributes.get("event_type") == "turned_on"
+    ]
+    assert len(triggered) == 1
