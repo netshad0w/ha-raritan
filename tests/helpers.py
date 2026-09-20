@@ -2,8 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
+
+from homeassistant.helpers import device_registry as dr
+
+from custom_components.raritan.const import DOMAIN
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.device_registry import DeviceEntry
+
+
+def entry_devices(hass: HomeAssistant) -> list[DeviceEntry]:
+    """Every device the one configured PDU entry owns.
+
+    Goes through the registry helper rather than reading ``devices`` as a
+    container: what iterating that container yields changed in 2026.9, and
+    the helper reads the same on either side of it.
+    """
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    return dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
 
 
 def make_fake_bulk_helper_class() -> MagicMock:

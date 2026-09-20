@@ -15,6 +15,7 @@ from custom_components.raritan.const import (
     CONF_VERIFY_TLS,
     DOMAIN,
 )
+from tests.helpers import entry_devices
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -109,7 +110,6 @@ async def test_ocp_tripped_state_reflects_tripped_breaker(
 
 async def test_ocp_sub_device_hierarchy(hass: HomeAssistant, mock_raritan: MagicMock) -> None:
     """Each OCP must be a sub-device of the PDU (linked by via_device_id)."""
-    from homeassistant.helpers import device_registry as dr
 
     # Set up basic OCP sensor mocks
     for ocp in mock_raritan.getOverCurrentProtectors.return_value:
@@ -135,11 +135,11 @@ async def test_ocp_sub_device_hierarchy(hass: HomeAssistant, mock_raritan: Magic
     )
     await hass.async_block_till_done()
 
-    devreg = dr.async_get(hass)
-    pdu_dev = next(d for d in devreg.devices.values() if (DOMAIN, "TEST00000001") in d.identifiers)
+    devices = entry_devices(hass)
+    pdu_dev = next(d for d in devices if (DOMAIN, "TEST00000001") in d.identifiers)
     ocp_devs = [
         d
-        for d in devreg.devices.values()
+        for d in devices
         if d.via_device_id == pdu_dev.id and any("_ocp_" in i for _, i in d.identifiers)
     ]
     assert len(ocp_devs) == 6

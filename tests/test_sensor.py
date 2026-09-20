@@ -19,6 +19,7 @@ from custom_components.raritan.const import (
     CONF_VERIFY_TLS,
     DOMAIN,
 )
+from tests.helpers import entry_devices
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -164,7 +165,6 @@ async def test_inlet_single_feed_attaches_to_pdu_device(
     The 99% case: adding a sub-device for the only feed would just deepen
     navigation without conveying useful information.
     """
-    from homeassistant.helpers import device_registry as dr
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -180,11 +180,8 @@ async def test_inlet_single_feed_attaches_to_pdu_device(
     )
     await hass.async_block_till_done()
 
-    devreg = dr.async_get(hass)
     # No inlet sub-device should exist on a single-inlet PDU.
-    inlet_devs = [
-        d for d in devreg.devices.values() if any("_inlet_" in i for _, i in d.identifiers)
-    ]
+    inlet_devs = [d for d in entry_devices(hass) if any("_inlet_" in i for _, i in d.identifiers)]
     assert inlet_devs == []
 
     # Flat on the PDU device, so the entity name keeps the "Inlet 1" qualifier
@@ -204,7 +201,6 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
     Each feed becomes addressable as its own HA device so users can assign
     Source A vs Source B to different Areas, alert per-source, etc.
     """
-    from homeassistant.helpers import device_registry as dr
 
     # Add a second inlet to the mock, same shape as the existing one so the
     # bulk readings still work. The integration treats len(getInlets()) as
@@ -257,11 +253,11 @@ async def test_inlet_multi_feed_creates_sub_device_per_inlet(
         f"{[(e.entity_id, e.unique_id) for e in inlet_entities]}"
     )
 
-    devreg = dr.async_get(hass)
-    pdu_dev = next(d for d in devreg.devices.values() if (DOMAIN, "TEST00000001") in d.identifiers)
+    devices = entry_devices(hass)
+    pdu_dev = next(d for d in devices if (DOMAIN, "TEST00000001") in d.identifiers)
     inlet_devs = [
         d
-        for d in devreg.devices.values()
+        for d in devices
         if d.via_device_id == pdu_dev.id and any("_inlet_" in i for _, i in d.identifiers)
     ]
     assert len(inlet_devs) == 2
@@ -282,7 +278,6 @@ async def test_outlet_sensors_have_sub_device_hierarchy(
     hass: HomeAssistant, mock_raritan_with_outlets: MagicMock
 ) -> None:
     """Each outlet should be a sub-device of the PDU (linked by via_device_id)."""
-    from homeassistant.helpers import device_registry as dr
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -298,9 +293,9 @@ async def test_outlet_sensors_have_sub_device_hierarchy(
     )
     await hass.async_block_till_done()
 
-    devreg = dr.async_get(hass)
-    pdu_dev = next(d for d in devreg.devices.values() if (DOMAIN, "TEST00000001") in d.identifiers)
-    outlet_devs = [d for d in devreg.devices.values() if d.via_device_id == pdu_dev.id]
+    devices = entry_devices(hass)
+    pdu_dev = next(d for d in devices if (DOMAIN, "TEST00000001") in d.identifiers)
+    outlet_devs = [d for d in devices if d.via_device_id == pdu_dev.id]
     assert len(outlet_devs) == 2
     # Bare names ("Outlet 1") so entities read "Outlet 1 Active power" rather
     # than repeating the PDU model+serial; serial_number disambiguates PDUs.
